@@ -1,0 +1,35 @@
+# ============================================================
+# stage-chillcheck/00-packages
+# Packages installed into the image at build time.
+# These are available immediately on first boot — no apt-get
+# needed during setup, which speeds up first-boot massively.
+# ============================================================
+
+# mDNS — chillcheck.local
+avahi-daemon
+avahi-utils
+libnss-mdns
+
+# MQTT broker
+mosquitto
+mosquitto-clients
+
+# Python
+python3
+python3-pip
+python3-venv
+
+# System tools
+git
+curl
+wget
+vim
+ufw
+jq
+dbus
+build-essential
+usbutils
+
+# Network tools (for Wi-Fi setup in local UI)
+wireless-tools
+wpasupplicant

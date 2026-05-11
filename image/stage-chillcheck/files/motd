@@ -1,0 +1,8 @@
+
+  ❄  ChillCheck Temperature Monitoring
+  ─────────────────────────────────────
+  Local UI:  http://chillcheck.local
+  Logs:      /var/log/chillcheck/
+  Config:    /etc/chillcheck/.env
+
+  Run 'chillcheck-setup' to re-run setup if needed.

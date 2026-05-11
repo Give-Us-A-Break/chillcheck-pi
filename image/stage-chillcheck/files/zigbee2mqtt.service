@@ -1,0 +1,17 @@
+[Unit]
+Description=ChillCheck — Zigbee2MQTT
+After=network.target mosquitto.service
+Requires=mosquitto.service
+
+[Service]
+Type=simple
+User=chillcheck
+WorkingDirectory=/opt/zigbee2mqtt
+ExecStart=/usr/bin/node /opt/zigbee2mqtt/index.js
+Restart=on-failure
+RestartSec=10s
+StandardOutput=append:/var/log/chillcheck/zigbee2mqtt/service.log
+StandardError=append:/var/log/chillcheck/zigbee2mqtt/service.log
+
+[Install]
+WantedBy=multi-user.target

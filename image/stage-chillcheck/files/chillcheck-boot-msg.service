@@ -1,0 +1,12 @@
+[Unit]
+Description=ChillCheck Boot Message
+After=local-fs.target
+Before=chillcheck-firstboot.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/bash -c 'echo "" > /dev/tty1; echo "  ❄  ChillCheck is starting up..." > /dev/tty1; echo "  This may take 5-8 minutes on first boot." > /dev/tty1; echo "  Please wait..." > /dev/tty1'
+
+[Install]
+WantedBy=multi-user.target
