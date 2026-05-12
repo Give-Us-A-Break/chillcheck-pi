@@ -503,11 +503,9 @@ fi
 
 # Sudoers rule so the local UI service (running as 'chillcheck')
 # can invoke the update script without a password prompt.
-sudo tee /etc/sudoers.d/chillcheck-update > /dev/null <<'SUDOERS'
-chillcheck ALL=(root) NOPASSWD: /usr/local/bin/chillcheck-update
-SUDOERS
+echo "$USER ALL=(root) NOPASSWD: /usr/local/bin/chillcheck-update" | sudo tee /etc/sudoers.d/chillcheck-update > /dev/null
 sudo chmod 0440 /etc/sudoers.d/chillcheck-update
-log "Granted chillcheck user passwordless sudo for /usr/local/bin/chillcheck-update"
+log "Granted $USER passwordless sudo for /usr/local/bin/chillcheck-update"
 
 
 # ════════════════════════════════════════════════════════════

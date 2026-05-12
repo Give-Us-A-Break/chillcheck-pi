@@ -1140,7 +1140,7 @@ def api_system_update_run():
     after ~60 seconds."""
     try:
         subprocess.Popen(
-            ["sudo", "/usr/local/bin/chillcheck-update"],
+            ["sudo", "-n", "/usr/local/bin/chillcheck-update"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             stdin=subprocess.DEVNULL,
