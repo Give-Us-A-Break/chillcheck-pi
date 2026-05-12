@@ -608,7 +608,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                   ? `<button onclick="runUpdate()" style="background:#161616;color:#ECEAE3;border:none;padding:8px 12px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;cursor:pointer;font-family:inherit">Install</button>`
                   : ''
                 }
-                ${state.updateInProgress ? '<span style="font-size:11px;color:#6B6B66;font-family:\'JetBrains Mono\',monospace">Updating…</span>' : ''}
+                ${state.updateInProgress ? `<span style="font-size:11px;color:#6B6B66;font-family:'JetBrains Mono',monospace">Updating…</span>` : ''}
               </div>
             </div>
 
@@ -640,7 +640,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     }
 
     function batteryBadge(pct) {
-      if (pct === null || pct === undefined) return '<span style="font-size:11px;color:#8A8A82;font-family:\'JetBrains Mono\',monospace">—</span>';
+      if (pct === null || pct === undefined) return `<span style="font-size:11px;color:#8A8A82;font-family:'JetBrains Mono',monospace">—</span>`;
       const color = pct > 60 ? '#1E6F4F' : pct > 30 ? '#C97A1A' : '#C72717';
       return `<span style="font-size:11px;font-weight:600;color:${color};font-family:'JetBrains Mono',monospace">${pct}%</span>`;
     }
