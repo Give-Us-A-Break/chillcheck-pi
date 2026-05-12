@@ -167,39 +167,41 @@ class AlertEngine:
         Check a reading against cabinet thresholds.
         Raises, upgrades, or resolves alerts as needed.
         """
-        target   = float(cabinet["target_temp"])
-        warn_off = float(cabinet["warning_offset"])
-        crit_off = float(cabinet["critical_offset"])
-        diff     = abs(temperature - target)
+        warn_low  = float(cabinet["warn_low"])
+        warn_high = float(cabinet["warn_high"])
+        crit_low  = float(cabinet["crit_low"])
+        crit_high = float(cabinet["crit_high"])
 
         cabinet_id   = cabinet["id"]
         cabinet_name = cabinet["name"]
 
-        if diff >= crit_off:
+        if temperature < crit_low or temperature > crit_high:
             severity = "critical"
-            direction = "above" if temperature > target else "below"
+            direction = "above" if temperature > crit_high else "below"
+            bound = crit_high if temperature > crit_high else crit_low
             message = (
                 f"{cabinet_name}: temperature {temperature}°C is {direction} "
-                f"critical threshold (target {target}°C ± {crit_off}°C)"
+                f"critical threshold ({bound}°C)"
             )
-            existing = self._get_active_alert(cabinet_id, "high_temp" if temperature > target else "low_temp")
+            existing = self._get_active_alert(cabinet_id, "high_temp" if temperature > crit_high else "low_temp")
             if not existing:
-                alert_type = "high_temp" if temperature > target else "low_temp"
+                alert_type = "high_temp" if temperature > crit_high else "low_temp"
                 self._raise_alert(cabinet, sensor, alert_type, severity, temperature, message)
             elif existing["severity"] == "warning":
                 # Upgrade existing warning to critical
                 self._upgrade_alert(existing["id"], "critical", message)
 
-        elif diff >= warn_off:
+        elif temperature < warn_low or temperature > warn_high:
             severity = "warning"
-            direction = "above" if temperature > target else "below"
+            direction = "above" if temperature > warn_high else "below"
+            bound = warn_high if temperature > warn_high else warn_low
             message = (
                 f"{cabinet_name}: temperature {temperature}°C is {direction} "
-                f"warning threshold (target {target}°C ± {warn_off}°C)"
+                f"warning threshold ({bound}°C)"
             )
-            existing = self._get_active_alert(cabinet_id, "high_temp" if temperature > target else "low_temp")
+            existing = self._get_active_alert(cabinet_id, "high_temp" if temperature > warn_high else "low_temp")
             if not existing:
-                alert_type = "high_temp" if temperature > target else "low_temp"
+                alert_type = "high_temp" if temperature > warn_high else "low_temp"
                 self._raise_alert(cabinet, sensor, alert_type, severity, temperature, message)
 
         else:
