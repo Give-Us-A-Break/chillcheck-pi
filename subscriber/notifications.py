@@ -10,7 +10,6 @@ Calls:  Twilio Voice (text-to-speech via TwiML)
 
 import os
 import logging
-from typing import Optional
 
 log = logging.getLogger("chillcheck.notifications")
 

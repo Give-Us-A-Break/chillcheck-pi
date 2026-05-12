@@ -714,11 +714,20 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     }
 
     async function runUpdate() {
-      if (!confirm('Install the latest update? Monitoring will pause for ~30 seconds.')) return;
+      if (!confirm('Install the latest update? Monitoring will pause for ~60 seconds.')) return;
       state.updateInProgress = true; render();
       try { await api('POST', '/api/system/update/run'); } catch (e) { /* expected: service restarts mid-request */ }
-      // Wait long enough for the script to finish (or roll back) then reload.
-      setTimeout(() => window.location.reload(), 45000);
+      // Poll until the version file changes, or give up after 3 minutes.
+      const started = Date.now();
+      const poll = setInterval(async () => {
+        try {
+          const v = await api('GET', '/api/system/version');
+          if (v.up_to_date || Date.now() - started > 180000) {
+            clearInterval(poll);
+            window.location.reload();
+          }
+        } catch (e) { /* service may still be restarting */ }
+      }, 8000);
     }
 
     async function startPairing() {

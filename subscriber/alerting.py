@@ -10,9 +10,8 @@ Handles:
   - Out-of-hours escalation (skip straight to call)
 """
 
-import os
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from typing import Optional
 
 from notifications import send_email, send_sms, make_call
