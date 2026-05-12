@@ -93,84 +93,34 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ChillCheck Local Setup</title>
+  <title>ChillCheck Hub</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      background: #f8fafc;
-      color: #0f172a;
-      min-height: 100vh;
-    }
-    #app {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 100vh;
-    }
-    .loading {
-      text-align: center;
-      color: #64748b;
-    }
-    .loading h2 { font-size: 18px; margin-bottom: 8px; }
-    .loading p  { font-size: 14px; }
-    .spinner {
-      width: 32px; height: 32px;
-      border: 3px solid #e2e8f0;
-      border-top-color: #0ea5e9;
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-      margin: 0 auto 16px;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
-
-    /* ── Responsive shell ─────────────────────────────────── */
-    .app-shell  { min-height: 100vh; display: flex; flex-direction: column; width: 100%; }
-    .app-header { background: #fff; border-bottom: 1px solid #e2e8f0; height: 56px;
-                  display: flex; align-items: center; justify-content: space-between;
-                  position: sticky; top: 0; z-index: 50; padding: 0 16px; gap: 12px; }
-    .app-header-status { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
-    .app-header-status-label { display: none; }
-    .app-body   { display: flex; flex: 1; min-height: 0; }
-    .app-sidebar { background: #fff; padding: 14px 10px; flex-shrink: 0; }
-    .app-main    { flex: 1; padding: 20px 16px; overflow-y: auto; max-width: 100%; }
-    .app-nav-btn { display: flex; align-items: center; gap: 9px; border: none;
-                   cursor: pointer; padding: 9px 11px; border-radius: 8px;
-                   font-size: 13px; font-family: inherit; position: relative;
-                   white-space: nowrap; }
-
-    /* Mobile (default): sidebar collapses to a horizontal tab strip below header */
-    .app-sidebar { display: flex; flex-direction: row; gap: 4px;
-                   overflow-x: auto; border-bottom: 1px solid #e2e8f0;
-                   padding: 8px 12px; }
-    .app-sidebar .app-nav-btn { flex-shrink: 0; }
-
-    /* Tablet + desktop: real sidebar */
-    @media (min-width: 768px) {
-      .app-header  { padding: 0 24px; }
-      .app-header-status-label { display: inline; }
-      .app-sidebar { display: flex; flex-direction: column; width: 200px;
-                     border-right: 1px solid #e2e8f0; border-bottom: none;
-                     overflow-x: visible; padding: 14px 10px; }
-      .app-sidebar .app-nav-btn { width: 100%; text-align: left; margin-bottom: 2px; }
-      .app-main    { padding: 28px 32px; max-width: 900px; }
-    }
+    body { font-family: 'Inter Tight', sans-serif; background: #ECEAE3; color: #161616; min-height: 100vh; }
+    #app { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+    .cc-load-mark { font-family: 'Instrument Serif', Georgia, serif; font-size: 44px; line-height: 0.95; letter-spacing: -0.02em; text-align: center; }
+    .cc-load-mark span { color: #C97A1A; }
+    .cc-load-sub { font-size: 10px; color: #8A8A82; letter-spacing: 0.18em; text-transform: uppercase; margin-top: 12px; font-family: 'JetBrains Mono', monospace; text-align: center; }
+    .cc-nav { display: flex; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+    .cc-nav::-webkit-scrollbar { display: none; }
+    @keyframes ping { 0% { transform: scale(1); opacity: .6 } 100% { transform: scale(2.2); opacity: 0 } }
+    @keyframes spin  { to { transform: rotate(360deg); } }
+    @media (max-width: 700px) { .cc-two-col { grid-template-columns: 1fr !important; } }
   </style>
 </head>
 <body>
   <div id="app">
-    <div class="loading">
-      <div class="spinner"></div>
-      <h2>ChillCheck Local</h2>
-      <p>Loading setup interface…</p>
+    <div>
+      <div class="cc-load-mark">ChillCheck<span>.</span></div>
+      <div class="cc-load-sub">loading…</div>
     </div>
   </div>
 
   <script>
-    // API base — same origin
     const API = '';
 
-    // ── State ───────────────────────────────────────────────
     let state = {
       view: '{{ initial_view }}',
       cloudConnected: {{ 'true' if cloud_connected else 'false' }},
@@ -186,7 +136,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       assigningId: null,
     };
 
-    // ── Helpers ─────────────────────────────────────────────
     const $ = id => document.getElementById(id);
     const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
@@ -197,73 +146,67 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       return res.json();
     }
 
-    // ── Render ──────────────────────────────────────────────
     function render() {
-      const app = document.getElementById('app');
-      app.innerHTML = layout();
+      document.getElementById('app').innerHTML = layout();
     }
 
     function layout() {
       return `
-        <div class="app-shell">
-          ${header()}
-          <div class="app-body">
-            ${sidebar()}
-            <main class="app-main">
-              ${mainContent()}
-            </main>
-          </div>
+        <div style="min-height:100vh;display:flex;flex-direction:column;background:#ECEAE3;color:#161616;font-family:'Inter Tight',sans-serif">
+          ${utilityBar()}
+          ${pageHeader()}
+          <main style="padding:28px;flex:1">
+            ${mainContent()}
+          </main>
         </div>
       `;
     }
 
-    function header() {
+    function utilityBar() {
+      const right = state.cloudConnected
+        ? `<span style="width:6px;height:6px;border-radius:50%;background:#5FB28C;box-shadow:0 0 0 2px rgba(95,178,140,0.2);display:inline-block;flex-shrink:0"></span>
+           <span style="text-transform:uppercase">${state.cloudInfo?.org_name ? 'cloud connected · ' + esc(state.cloudInfo.org_name) : 'cloud connected'}</span>
+           <a href="${'{{ vercel_url }}'}" target="_blank" style="color:#C0BDB3;text-decoration:none;border-left:1px solid #4A4A45;padding-left:10px;margin-left:6px">Open dashboard ↗</a>`
+        : `<span style="width:6px;height:6px;border-radius:50%;background:#C97A1A;display:inline-block;flex-shrink:0"></span>
+           <span style="text-transform:uppercase;color:#A8A89F">not linked to cloud</span>`;
       return `
-        <header class="app-header">
-          <div style="display:flex;align-items:center;gap:10px;min-width:0">
-            <div style="width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,#0ea5e9,#0284c7);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0">❄</div>
-            <div style="min-width:0">
-              <div style="font-size:14px;font-weight:700;letter-spacing:-0.02em">ChillCheck <span style="font-weight:400;color:#94a3b8">Local</span></div>
-              <div style="font-size:10px;color:#94a3b8;font-weight:500">chillcheck.local</div>
-            </div>
-          </div>
-          <div class="app-header-status">
-            ${state.cloudConnected
-              ? `<div style="display:flex;align-items:center;gap:6px">
-                   <div style="width:7px;height:7px;border-radius:50%;background:#10b981;box-shadow:0 0 0 2px #d1fae5"></div>
-                   <span class="app-header-status-label" style="font-size:12px;color:#0a7c4e;font-weight:600">Cloud connected</span>
-                 </div>
-                 <a href="${'{{ vercel_url }}'}" target="_blank" style="font-size:12px;color:#0ea5e9;font-weight:600;text-decoration:none;white-space:nowrap">Open ↗</a>`
-              : `<div style="display:flex;align-items:center;gap:6px">
-                   <div style="width:7px;height:7px;border-radius:50%;background:#f59e0b"></div>
-                   <span class="app-header-status-label" style="font-size:12px;color:#92400e;font-weight:600">Not connected</span>
-                 </div>`
-            }
-          </div>
-        </header>
+        <div style="background:#161616;color:#C0BDB3;padding:10px 28px;display:flex;justify-content:space-between;align-items:center;font-size:11px;letter-spacing:0.06em;font-family:'Inter Tight',sans-serif;gap:16px;flex-wrap:wrap">
+          <span style="font-family:'JetBrains Mono',monospace">chillcheck.local</span>
+          <div style="display:flex;align-items:center;gap:8px">${right}</div>
+        </div>
       `;
     }
 
-    function sidebar() {
-      const items = [
-        { id: 'connect', label: 'Cloud Link',  icon: '🔗', dot: !state.cloudConnected },
-        { id: 'sensors', label: 'Sensors',     icon: '📡', dot: false },
-        { id: 'network', label: 'Network',     icon: '🌐', dot: false },
-        { id: 'system',  label: 'System',      icon: '⚙️', dot: false },
+    function pageHeader() {
+      const tabs = [
+        { id: 'connect', label: 'Cloud Link', dot: !state.cloudConnected },
+        { id: 'sensors', label: 'Sensors' },
+        { id: 'network', label: 'Network' },
+        { id: 'system',  label: 'System' },
       ];
       return `
-        <aside class="app-sidebar">
-          ${items.map(item => `
-            <button onclick="navigate('${item.id}')" class="app-nav-btn"
-              style="background:${state.view===item.id?'#f1f5f9':'transparent'};
-                color:${state.view===item.id?'#0f172a':'#64748b'};
-                font-weight:${state.view===item.id?600:400}">
-              <span style="font-size:14px">${item.icon}</span>
-              ${item.label}
-              ${item.dot ? '<span style="width:7px;height:7px;border-radius:50%;background:#f59e0b;margin-left:4px"></span>' : ''}
-            </button>
-          `).join('')}
-        </aside>
+        <header style="padding:22px 28px 0;border-bottom:1px solid #D8D5C6;background:#ECEAE3">
+          <div style="display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:18px;gap:16px;flex-wrap:wrap">
+            <div>
+              <div style="font-family:'Instrument Serif',Georgia,serif;font-size:34px;line-height:0.95;letter-spacing:-0.02em">
+                ChillCheck<span style="color:#C97A1A">.</span> <span style="font-style:italic;font-size:24px;color:#6B6B66">hub</span>
+              </div>
+              <div style="font-size:10px;color:#6B6B66;letter-spacing:0.18em;text-transform:uppercase;margin-top:6px">local installer console</div>
+            </div>
+          </div>
+          <nav class="cc-nav">
+            ${tabs.map(t => `
+              <button onclick="navigate('${t.id}')"
+                style="background:transparent;border:none;border-bottom:${state.view===t.id?'2px solid #161616':'2px solid transparent'};
+                  padding:12px 16px;font-size:12px;font-weight:${state.view===t.id?600:500};letter-spacing:0.06em;
+                  text-transform:uppercase;white-space:nowrap;color:${state.view===t.id?'#161616':'#6B6B66'};
+                  cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:6px;flex-shrink:0">
+                ${t.label}
+                ${t.dot ? '<span style="width:6px;height:6px;border-radius:50%;background:#C97A1A;display:inline-block"></span>' : ''}
+              </button>
+            `).join('')}
+          </nav>
+        </header>
       `;
     }
 
@@ -282,22 +225,29 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     function viewConnect() {
       if (state.cloudConnected) {
         return `
-          <div style="margin-bottom:24px">
-            <h1 style="font-size:20px;font-weight:700;margin:0 0 4px;letter-spacing:-0.02em">Cloud Link</h1>
-            <p style="font-size:13px;color:#64748b;margin:0">This Pi is connected to ChillCheck Cloud</p>
-          </div>
-          <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:20px 24px;max-width:420px">
-            <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
-              <div style="width:10px;height:10px;border-radius:50%;background:#10b981;box-shadow:0 0 0 3px #d1fae5"></div>
-              <div style="font-size:15px;font-weight:600">Connected to ChillCheck Cloud</div>
-            </div>
-            <div style="background:#f8fafc;border-radius:8px;padding:12px 14px;margin-bottom:20px;font-size:12px;line-height:1.8">
-              <div style="display:flex;justify-content:space-between"><span style="color:#64748b">Organisation</span><span style="font-weight:600">${esc(state.cloudInfo?.org_name||'—')}</span></div>
-              <div style="display:flex;justify-content:space-between"><span style="color:#64748b">Site</span><span style="font-weight:600">${esc(state.cloudInfo?.site_name||'—')}</span></div>
-              <div style="display:flex;justify-content:space-between"><span style="color:#64748b">Last sync</span><span style="font-weight:600">Just now</span></div>
+          <div style="max-width:480px">
+            <h1 style="font-family:'Instrument Serif',Georgia,serif;font-size:36px;font-weight:400;letter-spacing:-0.02em;margin:0 0 8px">Cloud Link</h1>
+            <p style="font-size:13px;color:#6B6B66;margin:0 0 24px">This hub is linked to ChillCheck Cloud.</p>
+            <div style="background:#FBFAF6;border:1px solid #DDD9CC;padding:22px 24px;margin-bottom:16px">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
+                <span style="width:8px;height:8px;border-radius:50%;background:#1E6F4F;display:inline-block"></span>
+                <span style="font-size:13px;font-weight:600;color:#1E6F4F;letter-spacing:0.04em;text-transform:uppercase">Connected</span>
+              </div>
+              <div style="font-size:12px;font-family:'JetBrains Mono',monospace;color:#6B6B66;line-height:2">
+                <div style="display:flex;justify-content:space-between;border-bottom:1px solid #ECEAE3;padding-bottom:6px;margin-bottom:6px">
+                  <span>organisation</span><span style="color:#161616">${esc(state.cloudInfo?.org_name||'—')}</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;border-bottom:1px solid #ECEAE3;padding-bottom:6px;margin-bottom:6px">
+                  <span>site</span><span style="color:#161616">${esc(state.cloudInfo?.site_name||'—')}</span>
+                </div>
+                <div style="display:flex;justify-content:space-between">
+                  <span>dashboard</span>
+                  <a href="${'{{ vercel_url }}'}" target="_blank" style="color:#161616">app.chillcheck.online ↗</a>
+                </div>
+              </div>
             </div>
             <button onclick="disconnectCloud()"
-              style="background:#fff5f5;color:#dc2626;border:1px solid #fecaca;padding:9px 16px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;font-family:inherit;width:100%">
+              style="background:transparent;border:1px solid #C72717;color:#C72717;padding:10px 16px;cursor:pointer;font-size:11px;font-weight:600;font-family:inherit;letter-spacing:0.08em;text-transform:uppercase">
               Disconnect from Cloud
             </button>
           </div>
@@ -305,44 +255,57 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       }
 
       return `
-        <div style="margin-bottom:24px">
-          <h1 style="font-size:20px;font-weight:700;margin:0 0 4px;letter-spacing:-0.02em">Cloud Link</h1>
-          <p style="font-size:13px;color:#64748b;margin:0">Connect this Pi to your ChillCheck cloud account</p>
-        </div>
-
-        <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:16px 18px;margin-bottom:20px;max-width:480px">
-          <div style="font-size:13px;font-weight:600;color:#1d4ed8;margin-bottom:10px">How to link this device</div>
-          ${[
-            'Log into your ChillCheck dashboard at ' + '{{ vercel_url }}',
-            'Go to Settings → Devices → Generate Pairing Code',
-            'Enter the 8-character code below',
-          ].map((s,i) => `
-            <div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:8px">
-              <div style="width:22px;height:22px;border-radius:50%;background:#1d4ed8;color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0">${i+1}</div>
-              <div style="font-size:13px;color:#1e40af;line-height:1.5">${s}</div>
+        <div style="display:grid;grid-template-columns:1fr 360px;gap:36px;align-items:start" class="cc-two-col">
+          <section>
+            <h1 style="font-family:'Instrument Serif',Georgia,serif;font-size:38px;font-weight:400;letter-spacing:-0.02em;margin:0 0 8px">This Pi isn't linked yet.</h1>
+            <p style="font-size:14px;color:#6B6B66;line-height:1.6;max-width:560px;margin:0 0 28px">
+              Link this hub to your ChillCheck cloud account so its sensor readings show up in the dashboard and alerts get sent to your team.
+            </p>
+            <div style="background:#FBFAF6;border:1px solid #DDD9CC;padding:24px 28px;margin-bottom:20px">
+              <div style="font-size:10px;color:#8A8A82;letter-spacing:0.18em;text-transform:uppercase;margin-bottom:12px;font-family:'JetBrains Mono',monospace">step 1 of 2 · on your computer</div>
+              <p style="font-size:14px;color:#161616;line-height:1.6;margin:0 0 10px">
+                Sign in to <span style="font-family:'JetBrains Mono',monospace;font-size:12px;background:#ECEAE3;padding:2px 6px">app.chillcheck.online</span>, open <strong>Settings → Devices</strong>, and tap "Pair a Pi". You'll get an 8-character code.
+              </p>
+              <div style="font-size:11px;color:#8A8A82;font-family:'JetBrains Mono',monospace">codes expire after 10 minutes</div>
             </div>
-          `).join('')}
-        </div>
-
-        <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:20px 24px;max-width:420px">
-          <div style="font-size:14px;font-weight:600;margin-bottom:16px">Enter Pairing Code</div>
-
-          <label style="font-size:11px;font-weight:600;color:#94a3b8;letter-spacing:0.06em;text-transform:uppercase;display:block;margin-bottom:6px">Site name (optional)</label>
-          <input id="siteName" placeholder="e.g. Pup Planet Wolverhampton"
-            style="width:100%;padding:10px 12px;font-size:14px;border:1px solid #e2e8f0;border-radius:8px;background:#f8fafc;font-family:inherit;outline:none;margin-bottom:16px">
-
-          <label style="font-size:11px;font-weight:600;color:#94a3b8;letter-spacing:0.06em;text-transform:uppercase;display:block;margin-bottom:6px">Pairing code</label>
-          <input id="pairingCode" placeholder="WOLF-4821" maxlength="9"
-            oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9-]/g,'')"
-            style="width:100%;padding:10px 12px;font-size:22px;font-family:monospace;letter-spacing:0.15em;text-align:center;border:1px solid #e2e8f0;border-radius:8px;background:#f8fafc;outline:none;margin-bottom:8px">
-          <div style="font-size:11px;color:#94a3b8;margin-bottom:20px">Codes expire after 10 minutes</div>
-
-          <div id="pairError" style="display:none;background:#fff5f5;border:1px solid #fecaca;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:13px;color:#dc2626"></div>
-
-          <button onclick="submitPairingCode()"
-            style="background:#0f172a;color:#fff;border:none;padding:10px 16px;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600;font-family:inherit;width:100%">
-            Connect to Cloud →
-          </button>
+            <div style="background:#161616;color:#ECEAE3;padding:24px 28px">
+              <div style="font-size:10px;color:#A8A89F;letter-spacing:0.18em;text-transform:uppercase;margin-bottom:14px;font-family:'JetBrains Mono',monospace">step 2 · enter the code here</div>
+              <label style="font-size:10px;color:#8A8A82;letter-spacing:0.12em;text-transform:uppercase;display:block;margin-bottom:8px;font-family:'JetBrains Mono',monospace">Site name (optional)</label>
+              <input id="siteName" placeholder="e.g. Pup Planet Wolverhampton"
+                style="width:100%;padding:10px 12px;font-size:13px;border:1px solid #2a2a25;background:#0a0a0a;color:#ECEAE3;font-family:inherit;outline:none;margin-bottom:16px">
+              <label style="font-size:10px;color:#8A8A82;letter-spacing:0.12em;text-transform:uppercase;display:block;margin-bottom:8px;font-family:'JetBrains Mono',monospace">Pairing code</label>
+              <input id="pairingCode" placeholder="WOLF-4821" maxlength="9"
+                oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9-]/g,'')"
+                style="width:100%;padding:10px 12px;font-size:24px;font-family:'JetBrains Mono',monospace;letter-spacing:0.2em;text-align:center;border:1px solid #2a2a25;background:#0a0a0a;color:#ECEAE3;outline:none;margin-bottom:8px">
+              <div id="pairError" style="display:none;background:#2a0a0a;border:1px solid #C72717;padding:10px 14px;margin-bottom:12px;font-size:13px;color:#E5B0A8"></div>
+              <button onclick="submitPairingCode()"
+                style="background:#C97A1A;border:none;color:#161616;padding:12px 20px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;cursor:pointer;font-family:inherit;margin-top:6px">
+                Link this Pi →
+              </button>
+            </div>
+          </section>
+          <aside>
+            <div style="font-size:10px;color:#8A8A82;letter-spacing:0.18em;text-transform:uppercase;margin-bottom:10px;font-family:'JetBrains Mono',monospace">connectivity</div>
+            ${[
+              { label: 'Cloud API', ok: true, meta: 'app.chillcheck.online' },
+              { label: 'Time sync', ok: true, meta: 'ntp ok' },
+            ].map(row => `
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:12px 0;border-bottom:1px solid #D8D5C6">
+                <div>
+                  <div style="font-size:13px;font-weight:500">${row.label}</div>
+                  <div style="font-size:11px;color:#8A8A82;font-family:'JetBrains Mono',monospace;margin-top:2px">${row.meta}</div>
+                </div>
+                <div style="display:flex;align-items:center;gap:6px">
+                  <span style="width:6px;height:6px;border-radius:50%;background:${row.ok?'#1E6F4F':'#A02216'};display:inline-block"></span>
+                  <span style="font-size:11px;font-weight:600;color:${row.ok?'#1E6F4F':'#9A1B11'};text-transform:uppercase;letter-spacing:0.06em">${row.ok?'ok':'error'}</span>
+                </div>
+              </div>
+            `).join('')}
+            <div style="margin-top:24px;padding:14px 16px;background:#F4F1E8;border:1px solid #DDD9CC;font-size:12px;color:#6B6B66;line-height:1.55">
+              <strong style="color:#161616">No account yet?</strong><br>
+              Go to <span style="font-family:'JetBrains Mono',monospace">chillcheck.online</span> to sign up. The first 30 days are free.
+            </div>
+          </aside>
         </div>
       `;
     }
@@ -350,16 +313,17 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     function viewSensors() {
       const unassigned = state.sensors.filter(s => !s.cabinet_id);
       const assigned   = state.sensors.filter(s =>  s.cabinet_id);
-
       return `
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:20px;gap:12px;flex-wrap:wrap">
           <div>
-            <h1 style="font-size:20px;font-weight:700;margin:0 0 4px;letter-spacing:-0.02em">Sensors</h1>
-            <p style="font-size:13px;color:#64748b;margin:0">${state.sensors.length} paired · ${unassigned.length} unassigned</p>
+            <h1 style="font-family:'Instrument Serif',Georgia,serif;font-size:36px;font-weight:400;letter-spacing:-0.02em;margin:0">Sensors</h1>
+            <div style="font-size:11px;color:#6B6B66;letter-spacing:0.12em;text-transform:uppercase;margin-top:4px;font-family:'JetBrains Mono',monospace">
+              ${state.sensors.length} paired · ${unassigned.length} unassigned
+            </div>
           </div>
           <div style="display:flex;gap:8px">
-            <button onclick="refreshSensors()" style="background:#f8fafc;color:#374151;border:1px solid #e2e8f0;padding:7px 14px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;font-family:inherit">↺ Refresh</button>
-            <button onclick="startPairing()" style="background:#0f172a;color:#fff;border:none;padding:9px 16px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;font-family:inherit">+ Pair Sensor</button>
+            <button onclick="refreshSensors()" style="background:transparent;color:#161616;border:1px solid #DDD9CC;padding:9px 14px;cursor:pointer;font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;font-family:inherit">Refresh</button>
+            <button onclick="startPairing()" style="background:#161616;color:#ECEAE3;border:none;padding:9px 16px;cursor:pointer;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;font-family:inherit">+ Pair sensor</button>
           </div>
         </div>
 
@@ -367,27 +331,19 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         ${state.assigningId   ? assignModal()  : ''}
 
         ${unassigned.length > 0 ? `
-          <div style="font-size:12px;font-weight:600;color:#94a3b8;letter-spacing:0.06em;text-transform:uppercase;margin-bottom:10px">Unassigned (${unassigned.length})</div>
+          <div style="font-size:10px;color:#8A8A82;letter-spacing:0.18em;text-transform:uppercase;margin-bottom:10px;font-family:'JetBrains Mono',monospace">unassigned (${unassigned.length})</div>
           ${unassigned.map(s => unassignedCard(s)).join('')}
-          <div style="margin-bottom:20px"></div>
+          <div style="margin-bottom:24px"></div>
         ` : ''}
 
-        <div style="font-size:12px;font-weight:600;color:#94a3b8;letter-spacing:0.06em;text-transform:uppercase;margin-bottom:10px">Assigned (${assigned.length})</div>
+        <div style="font-size:10px;color:#8A8A82;letter-spacing:0.18em;text-transform:uppercase;margin-bottom:10px;font-family:'JetBrains Mono',monospace">assigned (${assigned.length})</div>
         ${assigned.length === 0
-          ? '<p style="font-size:13px;color:#94a3b8">No sensors assigned yet. Pair a sensor and assign it to a cabinet.</p>'
-          : `<div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden">
-               <table style="width:100%;border-collapse:collapse">
-                 <thead>
-                   <tr style="border-bottom:1px solid #f1f5f9">
-                     ${['Cabinet','Sensor ID','Signal','Battery','Last Seen',''].map(h =>
-                       `<th style="padding:10px 14px;font-size:11px;font-weight:600;color:#94a3b8;letter-spacing:0.06em;text-transform:uppercase;text-align:left">${h}</th>`
-                     ).join('')}
-                   </tr>
-                 </thead>
-                 <tbody>
-                   ${assigned.map((s,i) => sensorRow(s, i, assigned.length)).join('')}
-                 </tbody>
-               </table>
+          ? '<p style="font-size:13px;color:#8A8A82">No sensors assigned yet. Pair a sensor then assign it to a cabinet in the cloud dashboard.</p>'
+          : `<div style="background:#FBFAF6;border:1px solid #DDD9CC">
+               <div style="display:grid;grid-template-columns:1fr 180px 70px 80px 100px 90px;padding:10px 20px;background:#ECEAE3;border-bottom:1px solid #D8D5C6;font-size:10px;color:#6B6B66;letter-spacing:0.12em;text-transform:uppercase;font-family:'JetBrains Mono',monospace">
+                 <span>cabinet</span><span>sensor id</span><span>signal</span><span>battery</span><span>last seen</span><span></span>
+               </div>
+               ${assigned.map((s,i,a) => sensorRow(s, i, a.length)).join('')}
              </div>`
         }
       `;
@@ -395,19 +351,14 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
     function unassignedCard(s) {
       return `
-        <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:12px;padding:16px 18px;display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-          <div style="display:flex;gap:14px;align-items:center">
-            <div style="width:36px;height:36px;border-radius:8px;background:#fef3c7;display:flex;align-items:center;justify-content:center;font-size:18px">📡</div>
-            <div>
-              <div style="font-size:13px;font-weight:600;margin-bottom:2px">New Sensor</div>
-              <div style="font-size:11px;font-family:monospace;color:#94a3b8">···${esc(s.zigbee_id?.slice(-4)||'????')} · ${esc(s.last_seen_ago||'unknown')}</div>
-              <div style="display:flex;gap:10px;margin-top:4px;align-items:center">
-                ${signalBars(s.rssi)} ${batteryBadge(s.battery_pct)}
-              </div>
-            </div>
+        <div style="background:#FBFAF6;border:1px dashed #C97A1A;padding:16px 20px;display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <div>
+            <div style="font-size:14px;font-weight:600;margin-bottom:4px">New Sensor</div>
+            <div style="font-size:11px;font-family:'JetBrains Mono',monospace;color:#6B6B66;margin-bottom:6px">···${esc(s.zigbee_id?.slice(-4)||'????')} · ${esc(s.last_seen_ago||'unknown')}</div>
+            <div style="display:flex;gap:12px;align-items:center">${signalBars(s.rssi)} ${batteryBadge(s.battery_pct)}</div>
           </div>
           <button onclick="openAssign('${s.id}')"
-            style="background:#0f172a;color:#fff;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;font-family:inherit">
+            style="background:#C97A1A;color:#161616;border:none;padding:9px 14px;cursor:pointer;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;font-family:inherit">
             Assign →
           </button>
         </div>
@@ -417,19 +368,19 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     function sensorRow(s, i, total) {
       const offline = s.minutes_since_seen > 30;
       return `
-        <tr style="border-bottom:${i<total-1?'1px solid #f8fafc':'none'};background:${offline?'#fff5f5':'transparent'}">
-          <td style="padding:11px 14px;font-size:13px;font-weight:600">${esc(s.cabinet_name||'Unknown')}</td>
-          <td style="padding:11px 14px;font-size:11px;font-family:monospace;color:#94a3b8">···${esc(s.zigbee_id?.slice(-4)||'????')}</td>
-          <td style="padding:11px 14px">${signalBars(s.rssi)}</td>
-          <td style="padding:11px 14px">${batteryBadge(s.battery_pct)}</td>
-          <td style="padding:11px 14px;font-size:12px;color:${offline?'#dc2626':'#64748b'}">${esc(s.last_seen_ago||'unknown')}</td>
-          <td style="padding:11px 14px">
+        <div style="display:grid;grid-template-columns:1fr 180px 70px 80px 100px 90px;align-items:center;padding:14px 20px;border-bottom:${i<total-1?'1px solid #ECEAE3':'none'};background:${offline?'#F4EDE8':'transparent'}">
+          <span style="font-size:13px;font-weight:600">${esc(s.cabinet_name||'Unknown')}</span>
+          <span style="font-size:11px;font-family:'JetBrains Mono',monospace;color:#6B6B66">···${esc(s.zigbee_id?.slice(-4)||'????')}</span>
+          <span>${signalBars(s.rssi)}</span>
+          <span>${batteryBadge(s.battery_pct)}</span>
+          <span style="font-size:11px;font-family:'JetBrains Mono',monospace;color:${offline?'#C72717':'#6B6B66'}">${esc(s.last_seen_ago||'—')}</span>
+          <span style="text-align:right">
             <button onclick="unassignSensor('${s.id}')"
-              style="background:#fff5f5;color:#dc2626;border:1px solid #fecaca;padding:5px 10px;border-radius:6px;cursor:pointer;font-size:12px;font-family:inherit">
+              style="background:transparent;color:#C72717;border:1px solid #C72717;padding:5px 10px;cursor:pointer;font-size:11px;font-family:inherit;letter-spacing:0.04em">
               Unassign
             </button>
-          </td>
-        </tr>
+          </span>
+        </div>
       `;
     }
 
@@ -440,34 +391,46 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         { title: 'Sensor found!',                desc: 'New sensor detected. You can now assign it to a cabinet.' },
       ];
       return `
-        <div style="position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:100;display:flex;align-items:center;justify-content:center">
-          <div style="background:#fff;border-radius:12px;padding:24px;width:440px;max-width:90vw;box-shadow:0 20px 60px rgba(0,0,0,0.15)">
+        <div style="position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:100;display:flex;align-items:center;justify-content:center">
+          <div style="background:#FBFAF6;border:1px solid #DDD9CC;padding:28px;width:440px;max-width:90vw">
             <div style="font-size:16px;font-weight:700;margin-bottom:4px">Pair New Sensor</div>
-            <div style="font-size:13px;color:#64748b;margin-bottom:20px">Follow the steps below to add a new SNZB-02LD</div>
+            <div style="font-size:13px;color:#6B6B66;margin-bottom:24px">Follow the steps below to add a new SNZB-02LD</div>
             ${steps.map((step,i) => `
-              <div style="display:flex;gap:14px;margin-bottom:16px;opacity:${state.pairingStep>=i+1?1:0.35}">
-                <div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;
-                  background:${state.pairingStep>i+1?'#10b981':state.pairingStep===i+1?'#0f172a':'#e2e8f0'};
-                  color:${state.pairingStep>=i+1?'#fff':'#94a3b8'};
-                  display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700">
+              <div style="display:flex;gap:14px;margin-bottom:18px;opacity:${state.pairingStep>=i+1?1:0.35}">
+                <div style="width:26px;height:26px;flex-shrink:0;
+                  background:${state.pairingStep>i+1?'#1E6F4F':state.pairingStep===i+1?'#161616':'#D8D5C6'};
+                  color:${state.pairingStep>=i+1?'#ECEAE3':'#8A8A82'};
+                  display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;font-family:'JetBrains Mono',monospace">
                   ${state.pairingStep>i+1?'✓':i+1}
                 </div>
                 <div>
                   <div style="font-size:13px;font-weight:600;margin-bottom:2px">${step.title}</div>
-                  <div style="font-size:12px;color:#64748b;line-height:1.5">${step.desc}</div>
+                  <div style="font-size:12px;color:#6B6B66;line-height:1.5">${step.desc}</div>
                 </div>
               </div>
             `).join('')}
-            ${state.pairingStep===2?`<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:#f8fafc;border-radius:8px;margin-bottom:16px"><div style="width:14px;height:14px;border:2px solid #e2e8f0;border-top-color:#0ea5e9;border-radius:50%;animation:spin 0.8s linear infinite"></div><span style="font-size:12px;color:#64748b">Scanning for Zigbee devices…</span></div>`:''}
-            ${state.pairingStep===3?`<div style="background:#f0fdf4;border:1px solid #d1fae5;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:13px;color:#166534;font-weight:500">✓ New sensor detected and ready to assign</div>`:''}
-            <div style="display:flex;gap:8px;justify-content:flex-end">
-              <button onclick="cancelPairing()" style="background:#f8fafc;color:#374151;border:1px solid #e2e8f0;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:13px;font-family:inherit">Cancel</button>
-              ${state.pairingStep<3?`<button onclick="advancePairing()" style="background:#0f172a;color:#fff;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;font-family:inherit">${state.pairingStep===0?'Start':state.pairingStep===1?'Next →':'...'}</button>`:''}
-              ${state.pairingStep===3?`<button onclick="cancelPairing();refreshSensors();" style="background:#0f172a;color:#fff;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;font-family:inherit">Done</button>`:''}
+            ${state.pairingStep===2
+              ? `<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:#ECEAE3;margin-bottom:16px">
+                   <div style="width:12px;height:12px;border:2px solid #D8D5C6;border-top-color:#C97A1A;border-radius:50%;animation:spin 0.8s linear infinite"></div>
+                   <span style="font-size:12px;color:#6B6B66">Scanning for Zigbee devices…</span>
+                 </div>` : ''
+            }
+            ${state.pairingStep===3
+              ? `<div style="background:#EAF3EF;border:1px solid #1E6F4F;padding:10px 14px;margin-bottom:16px;font-size:13px;color:#1E6F4F;font-weight:500">New sensor detected and ready to assign</div>` : ''
+            }
+            <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
+              <button onclick="cancelPairing()" style="background:transparent;color:#161616;border:1px solid #DDD9CC;padding:9px 14px;cursor:pointer;font-size:11px;letter-spacing:0.06em;text-transform:uppercase;font-family:inherit">Cancel</button>
+              ${state.pairingStep<3
+                ? `<button onclick="advancePairing()" style="background:#161616;color:#ECEAE3;border:none;padding:9px 16px;cursor:pointer;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;font-family:inherit">${state.pairingStep===0?'Start':state.pairingStep===1?'Next →':'...'}</button>`
+                : ''
+              }
+              ${state.pairingStep===3
+                ? `<button onclick="cancelPairing();refreshSensors();" style="background:#161616;color:#ECEAE3;border:none;padding:9px 16px;cursor:pointer;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;font-family:inherit">Done</button>`
+                : ''
+              }
             </div>
           </div>
         </div>
-        <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
       `;
     }
 
@@ -476,18 +439,20 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         `<option value="${c.id}">${esc(c.name)}</option>`
       ).join('');
       return `
-        <div style="position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:100;display:flex;align-items:center;justify-content:center">
-          <div style="background:#fff;border-radius:12px;padding:24px;width:380px;max-width:90vw;box-shadow:0 20px 60px rgba(0,0,0,0.15)">
-            <div style="font-size:15px;font-weight:700;margin-bottom:16px">Assign Sensor</div>
-            <label style="font-size:11px;font-weight:600;color:#94a3b8;letter-spacing:0.06em;text-transform:uppercase;display:block;margin-bottom:6px">Cabinet</label>
-            <select id="assignTarget" style="width:100%;padding:10px 12px;font-size:14px;border:1px solid #e2e8f0;border-radius:8px;background:#f8fafc;font-family:inherit;outline:none;margin-bottom:8px">
+        <div style="position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:100;display:flex;align-items:center;justify-content:center">
+          <div style="background:#FBFAF6;border:1px solid #DDD9CC;padding:28px;width:380px;max-width:90vw">
+            <div style="font-size:15px;font-weight:700;margin-bottom:18px">Assign Sensor</div>
+            <label style="font-size:10px;font-weight:600;color:#8A8A82;letter-spacing:0.12em;text-transform:uppercase;display:block;margin-bottom:8px;font-family:'JetBrains Mono',monospace">Cabinet</label>
+            <select id="assignTarget" style="width:100%;padding:10px 12px;font-size:13px;border:1px solid #DDD9CC;background:#ECEAE3;color:#161616;font-family:inherit;outline:none;margin-bottom:8px">
               <option value="">Choose a cabinet…</option>
               ${opts}
             </select>
-            <p style="font-size:11px;color:#94a3b8;margin:0 0 20px">To create a new cabinet, use the cloud dashboard at <strong>app.chillcheck.online</strong></p>
+            <p style="font-size:11px;color:#8A8A82;margin:0 0 20px;line-height:1.5">
+              To create a new cabinet, use the cloud dashboard at <strong>app.chillcheck.online</strong>
+            </p>
             <div style="display:flex;gap:8px;justify-content:flex-end">
-              <button onclick="closeAssign()" style="background:#f8fafc;color:#374151;border:1px solid #e2e8f0;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:13px;font-family:inherit">Cancel</button>
-              <button onclick="confirmAssign()" style="background:#0f172a;color:#fff;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;font-family:inherit">Assign</button>
+              <button onclick="closeAssign()" style="background:transparent;color:#161616;border:1px solid #DDD9CC;padding:9px 14px;cursor:pointer;font-size:11px;letter-spacing:0.06em;text-transform:uppercase;font-family:inherit">Cancel</button>
+              <button onclick="confirmAssign()" style="background:#161616;color:#ECEAE3;border:none;padding:9px 16px;cursor:pointer;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;font-family:inherit">Assign</button>
             </div>
           </div>
         </div>
@@ -497,72 +462,74 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     function viewNetwork() {
       const status = state.networkStatus || {};
       return `
-        <div style="margin-bottom:24px">
-          <h1 style="font-size:20px;font-weight:700;margin:0 0 4px;letter-spacing:-0.02em">Network</h1>
-          <p style="font-size:13px;color:#64748b;margin:0">Connection status and Wi-Fi configuration</p>
-        </div>
+        <div style="display:grid;grid-template-columns:1fr 340px;gap:36px;align-items:start" class="cc-two-col">
+          <section>
+            <h1 style="font-family:'Instrument Serif',Georgia,serif;font-size:36px;font-weight:400;letter-spacing:-0.02em;margin:0 0 4px">Network</h1>
+            <p style="font-size:13px;color:#6B6B66;margin:0 0 24px">Connection status and Wi-Fi configuration</p>
 
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
-          <div style="background:${status.eth_connected?'#f0fdf9':'#f9fafb'};border:1px solid ${status.eth_connected?'#d1fae5':'#e5e7eb'};border-radius:12px;padding:16px 18px">
-            <div style="font-size:11px;font-weight:600;color:#94a3b8;letter-spacing:0.06em;text-transform:uppercase;margin-bottom:8px">Ethernet</div>
-            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-              <div style="width:8px;height:8px;border-radius:50%;background:${status.eth_connected?'#10b981':'#d1d5db'}"></div>
-              <span style="font-size:14px;font-weight:600;color:${status.eth_connected?'#0a7c4e':'#64748b'}">${status.eth_connected?'Connected':'Disconnected'}</span>
-            </div>
-            ${status.eth_connected?`
-              <div style="font-size:12px;color:#64748b;line-height:1.8">
-                <div>IP: ${esc(status.eth_ip||'—')}</div>
-                <div>Gateway: ${esc(status.gateway||'—')}</div>
-                <div>mDNS: chillcheck.local</div>
-              </div>
-            `:'<div style="font-size:12px;color:#94a3b8">No ethernet connection detected</div>'}
-          </div>
-          <div style="background:${status.wifi_connected?'#f0fdf9':'#f9fafb'};border:1px solid ${status.wifi_connected?'#d1fae5':'#e5e7eb'};border-radius:12px;padding:16px 18px">
-            <div style="font-size:11px;font-weight:600;color:#94a3b8;letter-spacing:0.06em;text-transform:uppercase;margin-bottom:8px">Wi-Fi</div>
-            <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-              <div style="width:8px;height:8px;border-radius:50%;background:${status.wifi_connected?'#10b981':'#d1d5db'}"></div>
-              <span style="font-size:14px;font-weight:600;color:${status.wifi_connected?'#0a7c4e':'#64748b'}">${status.wifi_ssid||'Not connected'}</span>
-            </div>
-            <div style="font-size:12px;color:#94a3b8">${status.wifi_connected?'Fallback if ethernet disconnects':'Optional — ethernet preferred'}</div>
-          </div>
-        </div>
-
-        <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:20px 24px">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-            <div style="font-size:14px;font-weight:600">Wi-Fi Networks</div>
-            <button onclick="scanNetworks()" style="background:#f8fafc;color:#374151;border:1px solid #e2e8f0;padding:7px 14px;border-radius:8px;cursor:pointer;font-size:13px;font-family:inherit">↺ Scan</button>
-          </div>
-          ${state.networks.length === 0
-            ? '<p style="font-size:13px;color:#94a3b8">Click Scan to search for Wi-Fi networks</p>'
-            : state.networks.map(net => `
-                <div onclick="selectNetwork('${esc(net.ssid)}')"
-                  style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-radius:8px;cursor:pointer;margin-bottom:6px;
-                    border:1px solid ${state.selectedNetwork===net.ssid?'#0ea5e9':'#e2e8f0'};
-                    background:${state.selectedNetwork===net.ssid?'#f0f9ff':'#f8fafc'}">
-                  <div style="display:flex;gap:10px;align-items:center">
-                    <span style="font-size:16px">📶</span>
-                    <div>
-                      <div style="font-size:13px;font-weight:500">${esc(net.ssid)}</div>
-                      <div style="font-size:11px;color:#94a3b8">${net.secured?'Secured':'Open'} · ${net.strength}% signal</div>
-                    </div>
-                  </div>
-                  ${state.selectedNetwork===net.ssid?'<span style="color:#0ea5e9;font-weight:700">✓</span>':''}
+            ${status.wifi_connected || status.eth_connected ? `
+              <div style="background:#FBFAF6;border:1px solid #DDD9CC;padding:18px 22px;margin-bottom:20px">
+                <div style="font-size:10px;color:#1E6F4F;letter-spacing:0.12em;text-transform:uppercase;font-weight:600;margin-bottom:6px">connected</div>
+                <div style="font-size:18px;font-weight:600;margin-bottom:4px">${esc(status.wifi_ssid || (status.eth_connected ? 'Ethernet' : '—'))}</div>
+                <div style="font-size:11px;color:#6B6B66;font-family:'JetBrains Mono',monospace;line-height:1.8">
+                  ${status.eth_ip||status.wifi_ip ? esc(status.eth_ip||status.wifi_ip) : '—'} · gateway ${esc(status.gateway||'—')}<br>mDNS: chillcheck.local
                 </div>
-              `).join('')
-          }
-          ${state.selectedNetwork ? `
-            <div style="border-top:1px solid #f1f5f9;padding-top:14px;margin-top:8px">
-              <label style="font-size:11px;font-weight:600;color:#94a3b8;letter-spacing:0.06em;text-transform:uppercase;display:block;margin-bottom:6px">Password for "${esc(state.selectedNetwork)}"</label>
-              <div style="display:flex;gap:8px">
-                <input type="password" id="wifiPassword" placeholder="Enter Wi-Fi password"
-                  style="flex:1;padding:10px 12px;font-size:14px;border:1px solid #e2e8f0;border-radius:8px;background:#f8fafc;font-family:inherit;outline:none">
-                <button onclick="connectWifi()"
-                  style="background:#0f172a;color:#fff;border:none;padding:10px 16px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;font-family:inherit">
-                  Connect
-                </button>
               </div>
+            ` : `
+              <div style="background:#FBFAF6;border:1px solid #DDD9CC;padding:18px 22px;margin-bottom:20px">
+                <div style="font-size:10px;color:#8A8A82;letter-spacing:0.12em;text-transform:uppercase;font-weight:600;margin-bottom:6px">disconnected</div>
+                <div style="font-size:13px;color:#6B6B66">No active network connection detected.</div>
+              </div>
+            `}
+
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+              <div style="font-size:10px;color:#8A8A82;letter-spacing:0.18em;text-transform:uppercase;font-family:'JetBrains Mono',monospace">available networks</div>
+              <button onclick="scanNetworks()" style="background:transparent;color:#161616;border:1px solid #DDD9CC;padding:7px 12px;cursor:pointer;font-size:11px;letter-spacing:0.06em;text-transform:uppercase;font-family:inherit">Scan</button>
             </div>
-          ` : ''}
+            ${state.networks.length === 0
+              ? '<p style="font-size:13px;color:#8A8A82">Click Scan to search for Wi-Fi networks</p>'
+              : `<div style="background:#FBFAF6;border:1px solid #DDD9CC">
+                   ${state.networks.map((net,i,a) => `
+                     <div onclick="selectNetwork('${esc(net.ssid)}')"
+                       style="display:grid;grid-template-columns:1fr 70px 50px 70px;align-items:center;padding:12px 20px;
+                         border-bottom:${i<a.length-1?'1px solid #ECEAE3':'none'};cursor:pointer;
+                         background:${state.selectedNetwork===net.ssid?'#F4F1E8':'transparent'}">
+                       <div style="font-size:13px;font-weight:500">${esc(net.ssid)}</div>
+                       <div style="font-size:11px;color:#6B6B66;font-family:'JetBrains Mono',monospace;text-transform:uppercase">${net.secured?'wpa2':'open'}</div>
+                       <div>${signalBars(null, net.strength)}</div>
+                       <div style="text-align:right;font-size:11px;font-weight:500;letter-spacing:0.06em;text-transform:uppercase;
+                         border-bottom:1px solid ${state.selectedNetwork===net.ssid?'#C97A1A':'#161616'};
+                         color:${state.selectedNetwork===net.ssid?'#C97A1A':'#161616'};
+                         justify-self:end;cursor:pointer">Connect</div>
+                     </div>
+                   `).join('')}
+                 </div>
+                 ${state.selectedNetwork ? `
+                   <div style="border:1px solid #DDD9CC;border-top:none;background:#FBFAF6;padding:16px 20px">
+                     <label style="font-size:10px;font-weight:600;color:#8A8A82;letter-spacing:0.12em;text-transform:uppercase;display:block;margin-bottom:8px;font-family:'JetBrains Mono',monospace">Password for "${esc(state.selectedNetwork)}"</label>
+                     <div style="display:flex;gap:8px">
+                       <input type="password" id="wifiPassword" placeholder="Wi-Fi password"
+                         style="flex:1;padding:10px 12px;font-size:13px;border:1px solid #DDD9CC;background:#ECEAE3;font-family:inherit;outline:none">
+                       <button onclick="connectWifi()"
+                         style="background:#161616;color:#ECEAE3;border:none;padding:10px 16px;cursor:pointer;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;font-family:inherit">
+                         Connect
+                       </button>
+                     </div>
+                   </div>
+                 ` : ''}`
+            }
+          </section>
+
+          <aside>
+            <div style="font-size:10px;color:#8A8A82;letter-spacing:0.18em;text-transform:uppercase;margin-bottom:10px;font-family:'JetBrains Mono',monospace">ethernet</div>
+            <div style="padding:12px 0;border-bottom:1px solid #D8D5C6;display:flex;justify-content:space-between">
+              <span style="font-size:13px">eth0</span>
+              <span style="font-size:11px;font-weight:600;color:${status.eth_connected?'#1E6F4F':'#8A8A82'};letter-spacing:0.06em;text-transform:uppercase">${status.eth_connected?'connected':'unplugged'}</span>
+            </div>
+            ${status.eth_ip ? `<div style="padding:10px 0;border-bottom:1px solid #D8D5C6;display:flex;justify-content:space-between;font-size:12px;font-family:'JetBrains Mono',monospace;color:#6B6B66"><span>ip</span><span>${esc(status.eth_ip)}</span></div>` : ''}
+            <div style="font-size:10px;color:#8A8A82;letter-spacing:0.18em;text-transform:uppercase;margin:24px 0 10px;font-family:'JetBrains Mono',monospace">tools</div>
+            <button onclick="scanNetworks()" style="width:100%;background:transparent;border:1px solid #161616;color:#161616;padding:10px 14px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;cursor:pointer;font-family:inherit;text-align:left">Scan for networks</button>
+          </aside>
         </div>
       `;
     }
@@ -571,104 +538,111 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       const sys = state.systemStatus || {};
       const svcs = sys.services || [];
       const ver = state.versionInfo || {};
+      const info = sys.info || {};
       return `
-        <div style="margin-bottom:24px">
-          <h1 style="font-size:20px;font-weight:700;margin:0 0 4px;letter-spacing:-0.02em">System</h1>
-          <p style="font-size:13px;color:#64748b;margin:0">Service status and system information</p>
-        </div>
+        <div style="display:grid;grid-template-columns:1fr 340px;gap:36px;align-items:start" class="cc-two-col">
+          <section>
+            <h1 style="font-family:'Instrument Serif',Georgia,serif;font-size:36px;font-weight:400;letter-spacing:-0.02em;margin:0 0 4px">System</h1>
+            <p style="font-size:13px;color:#6B6B66;margin:0 0 24px">Hub health and maintenance actions.</p>
 
-        <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:20px 24px;margin-bottom:16px">
-          <div style="font-size:14px;font-weight:600;margin-bottom:14px">Software</div>
-          <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f8fafc">
-            <span style="font-size:12px;color:#64748b">Installed</span>
-            <span style="font-size:12px;font-weight:600;font-family:monospace">${esc((ver.current||'unknown').slice(0,7))}</span>
-          </div>
-          <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f8fafc">
-            <span style="font-size:12px;color:#64748b">Latest available</span>
-            <span style="font-size:12px;font-weight:600;font-family:monospace">${esc((ver.latest||'unknown').slice(0,7))}</span>
-          </div>
-          <div style="display:flex;justify-content:space-between;padding:8px 0;align-items:center">
-            <span style="font-size:12px;color:#64748b">Status</span>
-            ${ver.up_to_date
-              ? '<span style="font-size:12px;font-weight:600;color:#0a7c4e">Up to date ✓</span>'
-              : ver.current && ver.latest
-                ? '<span style="font-size:12px;font-weight:600;color:#92400e">Update available</span>'
-                : '<span style="font-size:12px;color:#94a3b8">Checking…</span>'
-            }
-          </div>
-          <div style="display:flex;gap:8px;margin-top:14px">
-            <button onclick="checkForUpdates()"
-              style="background:#f8fafc;color:#374151;border:1px solid #e2e8f0;padding:7px 12px;border-radius:8px;cursor:pointer;font-size:12px;font-family:inherit"
-              ${state.updateInProgress ? 'disabled' : ''}>
-              Check again
-            </button>
-            ${!ver.up_to_date && ver.latest && !state.updateInProgress
-              ? '<button onclick="runUpdate()" style="background:#0f172a;color:#fff;border:none;padding:7px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;font-family:inherit">Install update</button>'
-              : ''
-            }
-            ${state.updateInProgress
-              ? '<span style="font-size:12px;color:#64748b;align-self:center">Updating… page will reload automatically.</span>'
-              : ''
-            }
-          </div>
-        </div>
-
-        <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:20px 24px;margin-bottom:16px">
-          <div style="font-size:14px;font-weight:600;margin-bottom:14px">Services</div>
-          ${svcs.map((svc,i) => `
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:${i<svcs.length-1?'1px solid #f8fafc':'none'}">
-              <div>
-                <div style="font-size:13px;font-weight:600;margin-bottom:1px">${esc(svc.name)}</div>
-                <div style="font-size:11px;color:#94a3b8">${esc(svc.description)}</div>
+            ${Object.keys(info).length > 0 ? `
+              <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:28px">
+                ${Object.entries(info).map(([k,v]) => `
+                  <div style="background:#FBFAF6;border:1px solid #DDD9CC;padding:14px 16px">
+                    <div style="font-size:10px;color:#8A8A82;letter-spacing:0.12em;text-transform:uppercase;margin-bottom:4px">${esc(k)}</div>
+                    <div style="font-family:'JetBrains Mono',monospace;font-size:14px;color:#161616">${esc(v)}</div>
+                  </div>
+                `).join('')}
               </div>
-              <div style="display:flex;align-items:center;gap:10px">
-                <div style="display:flex;align-items:center;gap:5px">
-                  <div style="width:7px;height:7px;border-radius:50%;background:${svc.active?'#10b981':'#ef4444'};box-shadow:${svc.active?'0 0 0 2px #d1fae5':'none'}"></div>
-                  <span style="font-size:12px;font-weight:500;color:${svc.active?'#0a7c4e':'#dc2626'}">${svc.active?'Running':'Stopped'}</span>
-                </div>
-                <button onclick="restartService('${esc(svc.unit)}')"
-                  style="background:#f8fafc;color:#374151;border:1px solid #e2e8f0;padding:5px 10px;border-radius:6px;cursor:pointer;font-size:12px;font-family:inherit">
-                  Restart
+            ` : ''}
+
+            <div style="font-size:10px;color:#8A8A82;letter-spacing:0.18em;text-transform:uppercase;margin-bottom:10px;font-family:'JetBrains Mono',monospace">services</div>
+            <div style="background:#FBFAF6;border:1px solid #DDD9CC;margin-bottom:28px">
+              ${svcs.length === 0
+                ? '<div style="padding:16px 20px;font-size:13px;color:#8A8A82">Loading service status…</div>'
+                : svcs.map((svc,i,a) => `
+                    <div style="display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:16px;padding:12px 20px;border-bottom:${i<a.length-1?'1px solid #ECEAE3':'none'}">
+                      <div>
+                        <div style="display:flex;align-items:center;gap:8px">
+                          <span style="width:6px;height:6px;border-radius:50%;background:${svc.active?'#1E6F4F':'#C72717'};flex-shrink:0;display:inline-block"></span>
+                          <span style="font-size:13px;font-family:'JetBrains Mono',monospace">${esc(svc.name)}</span>
+                        </div>
+                        <div style="font-size:11px;color:#6B6B66;margin-top:2px;padding-left:14px">${esc(svc.description)}</div>
+                      </div>
+                      <span style="font-size:11px;font-weight:600;color:${svc.active?'#1E6F4F':'#C72717'};letter-spacing:0.06em;text-transform:uppercase">${svc.active?'running':'down'}</span>
+                      <button onclick="restartService('${esc(svc.unit)}')"
+                        style="background:transparent;color:#161616;border:1px solid #DDD9CC;padding:5px 10px;cursor:pointer;font-size:11px;letter-spacing:0.04em;font-family:inherit">
+                        Restart
+                      </button>
+                    </div>
+                  `).join('')
+              }
+            </div>
+
+            <div style="font-size:10px;color:#8A8A82;letter-spacing:0.18em;text-transform:uppercase;margin-bottom:10px;font-family:'JetBrains Mono',monospace">actions</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button onclick="restartService('all')" style="background:transparent;color:#161616;border:1px solid #161616;padding:10px 14px;cursor:pointer;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;font-family:inherit">Restart all services</button>
+              <button onclick="if(confirm('Restart the Pi? Monitoring will pause for ~60 seconds.'))rebootPi()" style="background:transparent;color:#C72717;border:1px solid #C72717;padding:10px 14px;cursor:pointer;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;font-family:inherit">Restart Pi</button>
+            </div>
+          </section>
+
+          <aside>
+            <div style="font-size:10px;color:#8A8A82;letter-spacing:0.18em;text-transform:uppercase;margin-bottom:10px;font-family:'JetBrains Mono',monospace">updates</div>
+            <div style="background:#FBFAF6;border:1px solid #DDD9CC;padding:16px 18px;margin-bottom:24px">
+              <div style="font-size:13px;font-weight:600;margin-bottom:4px">Firmware ${ver.current ? esc(ver.current.slice(0,7)) : '—'}</div>
+              <div style="font-size:11px;color:#6B6B66;font-family:'JetBrains Mono',monospace;margin-bottom:12px">
+                ${ver.up_to_date
+                  ? '<span style="color:#1E6F4F;font-weight:600">up to date</span>'
+                  : ver.latest
+                    ? `latest: ${esc(ver.latest.slice(0,7))}`
+                    : 'checking…'
+                }
+              </div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+                <button onclick="checkForUpdates()"
+                  style="background:transparent;border:1px solid #161616;color:#161616;padding:8px 12px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;cursor:pointer;font-family:inherit"
+                  ${state.updateInProgress ? 'disabled' : ''}>
+                  Check for updates
                 </button>
+                ${!ver.up_to_date && ver.latest && !state.updateInProgress
+                  ? `<button onclick="runUpdate()" style="background:#161616;color:#ECEAE3;border:none;padding:8px 12px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;cursor:pointer;font-family:inherit">Install</button>`
+                  : ''
+                }
+                ${state.updateInProgress ? '<span style="font-size:11px;color:#6B6B66;font-family:\'JetBrains Mono\',monospace">Updating…</span>' : ''}
               </div>
             </div>
-          `).join('')}
-        </div>
 
-        <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:20px 24px;margin-bottom:16px">
-          <div style="font-size:14px;font-weight:600;margin-bottom:14px">System Info</div>
-          ${Object.entries(sys.info||{}).map(([k,v],i,arr) => `
-            <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:${i<arr.length-1?'1px solid #f8fafc':'none'}">
-              <span style="font-size:12px;color:#64748b">${esc(k)}</span>
-              <span style="font-size:12px;font-weight:500">${esc(v)}</span>
+            <div style="font-size:10px;color:#8A8A82;letter-spacing:0.18em;text-transform:uppercase;margin-bottom:10px;font-family:'JetBrains Mono',monospace">maintenance</div>
+            <button onclick="restartService('all')" style="width:100%;background:transparent;border:1px solid #161616;color:#161616;padding:12px 14px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;cursor:pointer;font-family:inherit;text-align:left;margin-bottom:6px">Restart all services</button>
+
+            <div style="margin-top:18px;padding:16px;background:#161616;color:#ECEAE3;border-top:3px solid #C72717">
+              <div style="font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#E5B0A8;margin-bottom:6px">danger zone</div>
+              <div style="font-size:12px;color:#A8A89F;line-height:1.55;margin-bottom:12px">Restarting the Pi takes ~60 seconds. Sensors will queue readings while offline.</div>
+              <button onclick="if(confirm('Restart the Pi? Monitoring will pause for ~60 seconds.'))rebootPi()"
+                style="background:transparent;border:1px solid #C72717;color:#E5B0A8;padding:9px 12px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;cursor:pointer;font-family:inherit;width:100%">
+                Restart Pi
+              </button>
             </div>
-          `).join('')}
-        </div>
-
-        <div style="background:#fff5f5;border:1px solid #fecaca;border-radius:12px;padding:20px 24px">
-          <div style="font-size:14px;font-weight:600;color:#991b1b;margin-bottom:14px">System Actions</div>
-          <div style="display:flex;gap:10px;flex-wrap:wrap">
-            <button onclick="restartService('all')" style="background:#fff5f5;color:#dc2626;border:1px solid #fecaca;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;font-family:inherit">Restart All Services</button>
-            <button onclick="if(confirm('Restart the Pi? Monitoring will pause for ~60 seconds.'))rebootPi()" style="background:#fff5f5;color:#dc2626;border:1px solid #fecaca;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;font-family:inherit">Restart Pi</button>
-          </div>
-          <div style="font-size:11px;color:#dc2626;margin-top:10px">⚠ Restarting will interrupt temperature monitoring for 30–60 seconds.</div>
+          </aside>
         </div>
       `;
     }
 
     // ── UI Components ────────────────────────────────────────
 
-    function signalBars(rssi) {
-      const s = !rssi ? 0 : rssi > -55 ? 3 : rssi > -70 ? 2 : 1;
+    function signalBars(rssi, strengthPct) {
+      let s = 0;
+      if (rssi) s = rssi > -55 ? 3 : rssi > -70 ? 2 : 1;
+      else if (strengthPct) s = strengthPct > 66 ? 3 : strengthPct > 33 ? 2 : 1;
       return `<div style="display:flex;align-items:flex-end;gap:2px;height:14px">
-        ${[6,10,14].map((h,i) => `<div style="width:4px;height:${h}px;border-radius:1px;background:${i<s?'#10b981':'#e2e8f0'}"></div>`).join('')}
+        ${[6,10,14].map((h,i) => `<div style="width:4px;height:${h}px;background:${i<s?'#1E6F4F':'#D8D5C6'}"></div>`).join('')}
       </div>`;
     }
 
     function batteryBadge(pct) {
-      if (pct === null || pct === undefined) return '<span style="font-size:11px;color:#94a3b8">—</span>';
-      const color = pct > 60 ? '#10b981' : pct > 30 ? '#f59e0b' : '#ef4444';
-      return `<span style="font-size:11px;font-weight:600;color:${color}">${pct}%</span>`;
+      if (pct === null || pct === undefined) return '<span style="font-size:11px;color:#8A8A82;font-family:\'JetBrains Mono\',monospace">—</span>';
+      const color = pct > 60 ? '#1E6F4F' : pct > 30 ? '#C97A1A' : '#C72717';
+      return `<span style="font-size:11px;font-weight:600;color:${color};font-family:'JetBrains Mono',monospace">${pct}%</span>`;
     }
 
     // ── Actions ──────────────────────────────────────────────
