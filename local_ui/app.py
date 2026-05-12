@@ -480,11 +480,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           <div style="background:#fff;border-radius:12px;padding:24px;width:380px;max-width:90vw;box-shadow:0 20px 60px rgba(0,0,0,0.15)">
             <div style="font-size:15px;font-weight:700;margin-bottom:16px">Assign Sensor</div>
             <label style="font-size:11px;font-weight:600;color:#94a3b8;letter-spacing:0.06em;text-transform:uppercase;display:block;margin-bottom:6px">Cabinet</label>
-            <select id="assignTarget" style="width:100%;padding:10px 12px;font-size:14px;border:1px solid #e2e8f0;border-radius:8px;background:#f8fafc;font-family:inherit;outline:none;margin-bottom:20px">
+            <select id="assignTarget" style="width:100%;padding:10px 12px;font-size:14px;border:1px solid #e2e8f0;border-radius:8px;background:#f8fafc;font-family:inherit;outline:none;margin-bottom:8px">
               <option value="">Choose a cabinet…</option>
               ${opts}
-              <option value="__new__">+ Create new cabinet</option>
             </select>
+            <p style="font-size:11px;color:#94a3b8;margin:0 0 20px">To create a new cabinet, use the cloud dashboard at <strong>app.chillcheck.online</strong></p>
             <div style="display:flex;gap:8px;justify-content:flex-end">
               <button onclick="closeAssign()" style="background:#f8fafc;color:#374151;border:1px solid #e2e8f0;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:13px;font-family:inherit">Cancel</button>
               <button onclick="confirmAssign()" style="background:#0f172a;color:#fff;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;font-family:inherit">Assign</button>
@@ -778,9 +778,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       const target = document.getElementById('assignTarget')?.value;
       if (!target) return;
       await api('POST', '/api/sensors/assign', {
-        sensor_id: state.assigningId,
-        cabinet_id: target === '__new__' ? null : target,
-        create_cabinet: target === '__new__',
+        sensor_id:  state.assigningId,
+        cabinet_id: target,
       });
       state.assigningId = null;
       await loadSensors();
