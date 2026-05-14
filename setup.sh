@@ -307,16 +307,11 @@ MQTT_HOST=127.0.0.1
 MQTT_PORT=1883
 MQTT_TOPIC_PREFIX=zigbee2mqtt
 
-# ── Alerting (Twilio) ─────────────────────────────────────────
-TWILIO_ACCOUNT_SID=your-twilio-account-sid
-TWILIO_AUTH_TOKEN=your-twilio-auth-token
-TWILIO_FROM_PHONE=+441234567890
-TWILIO_TWIML_URL=https://app.chillcheck.online/api/twiml
-
-# ── Alerting (Email via SendGrid) ────────────────────────────
-SENDGRID_API_KEY=your-sendgrid-api-key
-EMAIL_FROM=alerts@chillcheck.online
-EMAIL_FROM_NAME=ChillCheck Alerts
+# ── Alerting ─────────────────────────────────────────────────
+# Set automatically when Pi is linked via pairing code.
+# The Pi never holds SendGrid or Twilio credentials — all
+# notification sending is proxied through ChillCheck's cloud API.
+NOTIFY_SECRET=
 
 # ── Heartbeat ────────────────────────────────────────────────
 # URL pinged every 5 minutes to confirm Pi is alive

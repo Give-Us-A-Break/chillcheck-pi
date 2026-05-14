@@ -14,7 +14,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 
-from notifications import send_email, send_sms, make_call
+from notifications import notify
 
 log = logging.getLogger("chillcheck.alerts")
 
@@ -142,9 +142,7 @@ class AlertEngine:
             }).execute()
             alert = res.data[0]
             log.warning(f"ALERT raised: [{severity.upper()}] {message}")
-
-            # Send initial email immediately
-            self._send_email_notification(alert, cabinet)
+            notify(alert["id"], "email")
             return alert
         except Exception as e:
             log.error(f"Failed to raise alert: {e}")
@@ -311,171 +309,12 @@ class AlertEngine:
                     self._escalate_to_call(alert, cabinet)
 
     def _escalate_to_sms(self, alert: dict, cabinet: Optional[dict]):
-        """Send SMS to all contacts and update escalation level."""
         log.warning(f"Escalating alert {alert['id']} to SMS")
-        try:
-            contacts = self._get_contacts(notify_sms=True)
-            for contact in contacts:
-                if contact.get("phone"):
-                    send_sms(
-                        to=contact["phone"],
-                        message=self._format_sms(alert, cabinet),
-                    )
-            self.supabase.table("alerts").update({
-                "escalation_level": 1,
-                "sms_sent_at": datetime.now(timezone.utc).isoformat(),
-            }).eq("id", alert["id"]).execute()
-        except Exception as e:
-            log.error(f"SMS escalation failed: {e}")
+        notify(alert["id"], "sms")
+        # DB update (sms_sent_at, escalation_level) is handled by /api/notify
 
     def _escalate_to_call(self, alert: dict, cabinet: Optional[dict]):
-        """Make phone calls to priority contacts and update escalation level."""
         log.warning(f"Escalating alert {alert['id']} to phone call")
-        try:
-            contacts = self._get_contacts(notify_call=True)
-            # Call in priority order
-            contacts_sorted = sorted(contacts, key=lambda c: c.get("priority", 99))
-            for contact in contacts_sorted:
-                if contact.get("phone"):
-                    make_call(
-                        to=contact["phone"],
-                        message=self._format_call_message(alert, cabinet),
-                        alert_id=alert["id"],
-                    )
-            self.supabase.table("alerts").update({
-                "escalation_level": 2,
-                "call_made_at": datetime.now(timezone.utc).isoformat(),
-            }).eq("id", alert["id"]).execute()
-        except Exception as e:
-            log.error(f"Call escalation failed: {e}")
+        notify(alert["id"], "call")
+        # DB update (call_made_at, escalation_level) is handled by /api/notify
 
-    # ── Notification helpers ──────────────────────────────────
-
-    def _get_contacts(self, notify_email=False, notify_sms=False, notify_call=False) -> list:
-        """Fetch active contacts filtered by notification preference."""
-        try:
-            query = (
-                self.supabase.table("contacts")
-                .select("*")
-                .eq("organisation_id", self.organisation_id)
-                .eq("active", True)
-            )
-            if notify_email:
-                query = query.eq("notify_email", True)
-            if notify_sms:
-                query = query.eq("notify_sms", True)
-            if notify_call:
-                query = query.eq("notify_call", True)
-
-            res = query.order("priority").execute()
-            return res.data
-        except Exception as e:
-            log.error(f"Failed to fetch contacts: {e}")
-            return []
-
-    def _send_email_notification(self, alert: dict, cabinet: Optional[dict]):
-        """Send initial email alert to all email contacts."""
-        try:
-            contacts = self._get_contacts(notify_email=True)
-            if not contacts:
-                log.warning("No email contacts configured")
-                return
-
-            subject = self._format_email_subject(alert, cabinet)
-            body    = self._format_email_body(alert, cabinet)
-
-            for contact in contacts:
-                if contact.get("email"):
-                    send_email(
-                        to=contact["email"],
-                        to_name=contact["name"],
-                        subject=subject,
-                        body=body,
-                    )
-
-            # Update alert to mark email sent
-            self.supabase.table("alerts").update({
-                "email_sent_at":    datetime.now(timezone.utc).isoformat(),
-                "escalation_level": 0,
-            }).eq("id", alert["id"]).execute()
-
-        except Exception as e:
-            log.error(f"Email notification failed: {e}")
-
-    def _format_email_subject(self, alert: dict, cabinet: Optional[dict]) -> str:
-        severity = alert["severity"].upper()
-        cab_name = cabinet["name"] if cabinet else "Unknown Cabinet"
-        type_map = {
-            "high_temp":      "High Temperature",
-            "low_temp":       "Low Temperature",
-            "sensor_offline": "Sensor Offline",
-            "device_offline": "Hub Offline",
-        }
-        alert_type = type_map.get(alert["type"], alert["type"])
-        return f"[ChillCheck {severity}] {alert_type} — {cab_name}"
-
-    def _format_email_body(self, alert: dict, cabinet: Optional[dict]) -> str:
-        cab_name = cabinet["name"] if cabinet else "Unknown"
-        location = cabinet.get("location", "") if cabinet else ""
-        temp     = f"{alert['temperature']}°C" if alert.get("temperature") is not None else "N/A"
-        target   = f"{cabinet['target_temp']}°C" if cabinet else "N/A"
-        time_str = datetime.fromisoformat(
-            alert["triggered_at"].replace("Z", "+00:00")
-        ).strftime("%d %b %Y at %H:%M")
-
-        return f"""
-ChillCheck Temperature Alert
-{'=' * 40}
-
-{alert['message']}
-
-Cabinet:     {cab_name} ({location})
-Temperature: {temp}
-Target:      {target}
-Time:        {time_str}
-Severity:    {alert['severity'].upper()}
-
-This alert will escalate to SMS if not acknowledged within the configured time.
-
-Acknowledge this alert at your ChillCheck dashboard.
-
---
-ChillCheck Temperature Monitoring
-This is an automated alert. Do not reply to this email.
-        """.strip()
-
-    def _format_sms(self, alert: dict, cabinet: Optional[dict]) -> str:
-        cab_name = cabinet["name"] if cabinet else "Unknown"
-        temp     = f"{alert['temperature']}°C" if alert.get("temperature") is not None else ""
-        severity = alert["severity"].upper()
-        return (
-            f"ChillCheck {severity}: {cab_name}"
-            + (f" {temp}" if temp else "")
-            + f". {alert['message'][:100]}. "
-            f"Acknowledge at app.chillcheck.online"
-        )
-
-    def _format_call_message(self, alert: dict, cabinet: Optional[dict]) -> str:
-        """TwiML-friendly message for text-to-speech phone call."""
-        cab_name = cabinet["name"] if cabinet else "a cabinet"
-        temp_str = ""
-        if alert.get("temperature") is not None:
-            temp = float(alert["temperature"])
-            temp_str = f"Current temperature is {abs(temp)} degrees {'below' if temp < 0 else 'above'} zero. "
-
-        type_map = {
-            "high_temp":      "exceeded its high temperature threshold",
-            "low_temp":       "dropped below its low temperature threshold",
-            "sensor_offline": "gone offline — no readings received",
-            "device_offline": "lost connection to the monitoring hub",
-        }
-        what_happened = type_map.get(alert["type"], "triggered an alert")
-
-        return (
-            f"This is an automated alert from Chill Check temperature monitoring. "
-            f"{cab_name} has {what_happened}. "
-            f"{temp_str}"
-            f"Please check your dashboard immediately and acknowledge this alert. "
-            f"This message will repeat. "
-            f"Press any key to stop."
-        )

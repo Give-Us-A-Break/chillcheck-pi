@@ -46,6 +46,7 @@ SUPABASE_SERVICE_KEY= os.getenv("SUPABASE_SERVICE_KEY", "")
 ORGANISATION_ID     = os.getenv("ORGANISATION_ID", "")
 SITE_ID             = os.getenv("SITE_ID", "")
 DEVICE_ID           = os.getenv("DEVICE_ID", "")
+NOTIFY_SECRET       = os.getenv("NOTIFY_SECRET", "")
 LOCAL_UI_SECRET     = os.getenv("LOCAL_UI_SECRET", "chillcheck")
 PORT                = int(os.getenv("LOCAL_UI_PORT", 80))
 VERCEL_URL          = os.getenv("VERCEL_URL", "https://app.chillcheck.online")
@@ -1242,15 +1243,19 @@ def api_cloud_pair():
             "ORGANISATION_ID":      result["organisation_id"],
             "SITE_ID":              result["site_id"],
             "DEVICE_ID":            result["device_id"],
+            # NOTIFY_SECRET lets the Pi call /api/notify.
+            # No third-party API keys are ever stored on the Pi.
+            "NOTIFY_SECRET":        result.get("notify_secret", ""),
         })
 
         # Reload env vars in process
-        global SUPABASE_URL, SUPABASE_SERVICE_KEY, ORGANISATION_ID, SITE_ID, DEVICE_ID
+        global SUPABASE_URL, SUPABASE_SERVICE_KEY, ORGANISATION_ID, SITE_ID, DEVICE_ID, NOTIFY_SECRET
         SUPABASE_URL         = result["supabase_url"]
         SUPABASE_SERVICE_KEY = result["supabase_service_key"]
         ORGANISATION_ID      = result["organisation_id"]
         SITE_ID              = result["site_id"]
         DEVICE_ID            = result["device_id"]
+        NOTIFY_SECRET        = result.get("notify_secret", NOTIFY_SECRET)
 
         # Restart subscriber to pick up new credentials
         subprocess.Popen(["sudo", "systemctl", "restart", "chillcheck-subscriber"])
