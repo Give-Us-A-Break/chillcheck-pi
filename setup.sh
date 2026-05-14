@@ -309,7 +309,7 @@ MQTT_TOPIC_PREFIX=zigbee2mqtt
 
 # ── Alerting ─────────────────────────────────────────────────
 # Set automatically when Pi is linked via pairing code.
-# The Pi never holds SendGrid or Twilio credentials — all
+# The Pi never holds Resend or Twilio credentials — all
 # notification sending is proxied through ChillCheck's cloud API.
 NOTIFY_SECRET=
 
