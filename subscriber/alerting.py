@@ -4,6 +4,7 @@ ChillCheck — Alert Engine
 Handles:
   - Temperature threshold checking (warning / critical)
   - Sensor offline alerts
+  - Battery / signal-quality alerts
   - Alert deduplication (don't re-raise active alerts)
   - Alert resolution (temp returns to normal)
   - Escalation: email → SMS → phone call
@@ -53,6 +54,10 @@ class AlertEngine:
                 "email_delay_mins":      0,
                 "sms_delay_mins":        10,
                 "call_delay_mins":       15,
+                "battery_warn_pct":      20,
+                "battery_critical_pct":  10,
+                "signal_warn_dbm":       -85,
+                "signal_warn_mins":      30,
                 "out_of_hours_enabled":  False,
                 "out_of_hours_start":    "20:00",
                 "out_of_hours_end":      "07:00",
@@ -111,6 +116,24 @@ class AlertEngine:
             return res.data[0] if res.data else None
         except Exception as e:
             log.error(f"Sensor offline alert lookup failed: {e}")
+            return None
+
+    def _get_active_sensor_alert(self, sensor_id: str, alert_type: str) -> Optional[dict]:
+        """Return an unresolved alert of a given type for a specific sensor."""
+        try:
+            res = (
+                self.supabase.table("alerts")
+                .select("*")
+                .eq("sensor_id", sensor_id)
+                .eq("type", alert_type)
+                .is_("resolved_at", "null")
+                .order("triggered_at", desc=True)
+                .limit(1)
+                .execute()
+            )
+            return res.data[0] if res.data else None
+        except Exception as e:
+            log.error(f"Sensor {alert_type} alert lookup failed: {e}")
             return None
 
     # ── Raise alerts ──────────────────────────────────────────
@@ -275,7 +298,12 @@ class AlertEngine:
 
         now = datetime.now(timezone.utc)
 
+        # Battery and signal alerts are informational — email only, no SMS/call escalation
+        escalatable = {"high_temp", "low_temp", "sensor_offline", "device_offline"}
+
         for alert in active_alerts:
+            if alert.get("type") not in escalatable:
+                continue
             level        = alert.get("escalation_level", 0)
             triggered_at = datetime.fromisoformat(alert["triggered_at"].replace("Z", "+00:00"))
             minutes_old  = (now - triggered_at).total_seconds() / 60
@@ -317,4 +345,94 @@ class AlertEngine:
         log.warning(f"Escalating alert {alert['id']} to phone call")
         notify(alert["id"], "call")
         # DB update (call_made_at, escalation_level) is handled by /api/notify
+
+    # ── Battery alerts ────────────────────────────────────────
+
+    def check_battery(self, cabinet: dict, sensor: dict, battery_pct: int):
+        """Raise/upgrade/resolve a low_battery alert based on battery level."""
+        settings = self._get_settings()
+        warn_pct = settings.get("battery_warn_pct", 20)
+        crit_pct = settings.get("battery_critical_pct", 10)
+
+        existing = self._get_active_sensor_alert(sensor["id"], "low_battery")
+        sensor_label = sensor.get("name") or sensor.get("zigbee_id", "sensor")
+        cabinet_name = cabinet["name"]
+
+        if battery_pct < crit_pct:
+            message = (
+                f"{cabinet_name}: sensor '{sensor_label}' battery at {battery_pct}% "
+                f"— replace immediately"
+            )
+            if not existing:
+                self._raise_alert(cabinet, sensor, "low_battery", "critical", None, message)
+            elif existing["severity"] == "warning":
+                self._upgrade_alert(existing["id"], "critical", message)
+        elif battery_pct < warn_pct:
+            if not existing:
+                message = (
+                    f"{cabinet_name}: sensor '{sensor_label}' battery at {battery_pct}% "
+                    f"— replace soon"
+                )
+                self._raise_alert(cabinet, sensor, "low_battery", "warning", None, message)
+        else:
+            if existing:
+                log.info(f"Sensor {sensor['id']} battery back above threshold — resolving")
+                self._resolve_alert(existing["id"])
+
+    # ── Signal alerts ─────────────────────────────────────────
+
+    def check_signal(self, cabinet: dict, sensor: dict, rssi: int):
+        """Raise/resolve a low_signal alert after sustained poor RSSI."""
+        settings    = self._get_settings()
+        threshold   = settings.get("signal_warn_dbm", -85)
+        sustain_min = settings.get("signal_warn_mins", 30)
+
+        sensor_id    = sensor["id"]
+        sensor_label = sensor.get("name") or sensor.get("zigbee_id", "sensor")
+        cabinet_name = cabinet["name"]
+        existing     = self._get_active_sensor_alert(sensor_id, "low_signal")
+        now          = datetime.now(timezone.utc)
+
+        if rssi < threshold:
+            # Signal is poor — start (or continue) the timer
+            since_str = sensor.get("low_signal_since")
+            since     = None
+            if since_str:
+                try:
+                    since = datetime.fromisoformat(since_str.replace("Z", "+00:00"))
+                except Exception:
+                    since = None
+
+            if since is None:
+                # First time below threshold — record and skip
+                now_iso = now.isoformat()
+                try:
+                    self.supabase.table("sensors").update({
+                        "low_signal_since": now_iso,
+                    }).eq("id", sensor_id).execute()
+                    sensor["low_signal_since"] = now_iso
+                except Exception as e:
+                    log.error(f"Failed to set low_signal_since: {e}")
+                return
+
+            poor_minutes = (now - since).total_seconds() / 60
+            if poor_minutes >= sustain_min and not existing:
+                message = (
+                    f"{cabinet_name}: sensor '{sensor_label}' signal poor "
+                    f"({rssi} dBm) for {int(poor_minutes)} mins — try moving the hub closer"
+                )
+                self._raise_alert(cabinet, sensor, "low_signal", "warning", None, message)
+        else:
+            # Signal recovered — clear timer and resolve any active alert
+            if sensor.get("low_signal_since") is not None:
+                try:
+                    self.supabase.table("sensors").update({
+                        "low_signal_since": None,
+                    }).eq("id", sensor_id).execute()
+                    sensor["low_signal_since"] = None
+                except Exception as e:
+                    log.error(f"Failed to clear low_signal_since: {e}")
+            if existing:
+                log.info(f"Sensor {sensor_id} signal recovered — resolving")
+                self._resolve_alert(existing["id"])
 

@@ -207,6 +207,23 @@ class ReadingProcessor:
                 temperature=temperature,
             )
 
+            # Keep cached sensor in sync with the row we just wrote so
+            # state like low_signal_since reflects the latest DB value.
+            sensor.update({k: v for k, v in update_data.items() if k != "updated_at"})
+
+            if battery is not None:
+                self.alert_engine.check_battery(
+                    cabinet=cabinet,
+                    sensor=sensor,
+                    battery_pct=int(battery),
+                )
+            if rssi is not None:
+                self.alert_engine.check_signal(
+                    cabinet=cabinet,
+                    sensor=sensor,
+                    rssi=rssi,
+                )
+
     @staticmethod
     def _lqi_to_rssi(lqi: int) -> int:
         """Approximate conversion from Zigbee LQI (0-255) to dBm."""
