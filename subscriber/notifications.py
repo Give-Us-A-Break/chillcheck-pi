@@ -2,7 +2,7 @@
 ChillCheck — Notifications
 ===========================
 All notification sending is proxied through the ChillCheck cloud API.
-The Pi holds no Resend or Twilio credentials — those live in Vercel
+The Pi holds no Resend or Vonage credentials — those live in Vercel
 environment variables only and are never shipped to customer hardware.
 
 The Pi authenticates with NOTIFY_SECRET, a lightweight shared secret

@@ -267,7 +267,6 @@ pip install --quiet \
   supabase \
   httpx \
   python-dotenv \
-  twilio \
   flask \
   flask-cors \
   requests \
