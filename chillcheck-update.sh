@@ -11,6 +11,18 @@
 #   2  apply / restart failure (rolled back)
 # ============================================================
 
+# We are usually launched as a child of chillcheck-local-ui.service.
+# That service has the default KillMode=control-group, so when we later
+# run `systemctl stop chillcheck-local-ui` to swap files, systemd kills
+# our entire cgroup — including this script. Re-exec under systemd-run
+# so the rest of the work lives in its own transient scope and survives.
+if [ "${CHILLCHECK_UPDATE_DETACHED:-}" != "1" ] && command -v systemd-run >/dev/null 2>&1; then
+  exec systemd-run --quiet --collect \
+    --unit="chillcheck-update-$$" \
+    --setenv=CHILLCHECK_UPDATE_DETACHED=1 \
+    "$0" "$@"
+fi
+
 set -u
 set -o pipefail
 
@@ -76,6 +88,14 @@ if [ -d "$WORK_DIR/pi/local_ui" ]; then
   sudo cp -a "$WORK_DIR/pi/local_ui/." "$INSTALL_DIR/local_ui/"
 fi
 sudo chown -R chillcheck:chillcheck "$INSTALL_DIR/subscriber" "$INSTALL_DIR/local_ui"
+
+# Self-update: replace the installed updater script so fixes to the
+# updater itself propagate via the same Install button on the next run.
+# Safe to do after the file swap — bash has already read this file into
+# memory and is executing from there.
+if [ -f "$WORK_DIR/pi/chillcheck-update.sh" ]; then
+  sudo install -m 755 "$WORK_DIR/pi/chillcheck-update.sh" /usr/local/bin/chillcheck-update
+fi
 
 # ── Start services + health check ─────────────────────────────
 log "Starting services"
