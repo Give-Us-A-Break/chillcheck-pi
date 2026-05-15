@@ -398,7 +398,12 @@ EnvironmentFile=$CONFIG_DIR/.env
 ExecStart=$INSTALL_DIR/venv/bin/python $INSTALL_DIR/local_ui/app.py
 # Allow non-root user to bind to port 80
 AmbientCapabilities=CAP_NET_BIND_SERVICE
-CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+# DO NOT add CapabilityBoundingSet here. It would be inherited by every
+# child of this service, including the sudo we spawn from /api/system/update/run.
+# A restricted bounding set strips CAP_SETUID/SETGID from setuid binaries,
+# so sudo silently fails to elevate — no journald entry, no script output,
+# the UI just spins on "Updating…". AmbientCapabilities alone is enough
+# to grant the non-root user the bind-to-low-port capability.
 Restart=on-failure
 RestartSec=10s
 StandardOutput=append:$LOG_DIR/local_ui.log
