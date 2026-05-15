@@ -32,6 +32,7 @@ from dotenv import load_dotenv
 
 from alerting import AlertEngine
 from heartbeat import HeartbeatService
+from notifications import send_battery_digest
 
 # ── Load environment ──────────────────────────────────────────
 load_dotenv("/etc/chillcheck/.env")
@@ -467,6 +468,9 @@ def main():
     schedule.every(1).minutes.do(offline_check.check)
     schedule.every(5).minutes.do(heartbeat.ping)
     schedule.every(1).minutes.do(alert_engine.process_escalations)
+    # Weekly battery health digest. Endpoint is a no-op when no sensors are low,
+    # so it's safe to fire on a fixed cadence without filtering on this end.
+    schedule.every().monday.at("09:00").do(send_battery_digest)
 
     log.info("Scheduled tasks registered")
 

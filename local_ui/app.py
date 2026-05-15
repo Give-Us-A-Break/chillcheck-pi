@@ -4,19 +4,18 @@ ChillCheck — Local UI
 Flask app served at http://chillcheck.local (port 80).
 Accessible from any device on the same network as the Pi.
 
+Scope: sensor pairing and hub health only. Cabinet creation and sensor-to-
+cabinet assignment live in the cloud dashboard at app.chillcheck.online.
+
 Routes:
   GET  /                    → Dashboard (redirect to /sensors)
-  GET  /sensors             → Sensor management page
+  GET  /sensors             → Paired sensor list + pairing flow
   GET  /network             → Network / Wi-Fi config page
   GET  /system              → System status page
 
 API routes (called by the frontend JS):
-  GET  /api/sensors         → List all sensors with status
+  GET  /api/sensors         → List paired sensors with status
   POST /api/sensors/pair    → Enable Zigbee pairing mode
-  POST /api/sensors/assign  → Assign sensor to cabinet
-  POST /api/sensors/unassign→ Unassign sensor from cabinet
-  GET  /api/cabinets        → List cabinets from Supabase
-  POST /api/cabinets        → Create a new cabinet
   GET  /api/network/status  → Current network status
   GET  /api/network/scan    → Scan for Wi-Fi networks
   POST /api/network/connect → Connect to a Wi-Fi network
@@ -126,7 +125,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       view: '{{ initial_view }}',
       cloudConnected: {{ 'true' if cloud_connected else 'false' }},
       sensors: [],
-      cabinets: [],
       networkStatus: null,
       networks: [],
       systemStatus: null,
@@ -134,7 +132,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       updateInProgress: false,
       pairingActive: false,
       pairingStep: 0,
-      assigningId: null,
     };
 
     const $ = id => document.getElementById(id);
@@ -319,7 +316,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           <div>
             <h1 style="font-family:'Instrument Serif',Georgia,serif;font-size:36px;font-weight:400;letter-spacing:-0.02em;margin:0">Sensors</h1>
             <div style="font-size:11px;color:#6B6B66;letter-spacing:0.12em;text-transform:uppercase;margin-top:4px;font-family:'JetBrains Mono',monospace">
-              ${state.sensors.length} paired · ${unassigned.length} unassigned
+              ${state.sensors.length} paired · ${unassigned.length} awaiting assignment
             </div>
           </div>
           <div style="display:flex;gap:8px">
@@ -329,20 +326,25 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         </div>
 
         ${state.pairingActive ? pairingModal() : ''}
-        ${state.assigningId   ? assignModal()  : ''}
+
+        <div style="background:#F4F1E8;border:1px solid #DDD9CC;padding:12px 16px;margin-bottom:20px;font-size:12px;color:#6B6B66;line-height:1.55">
+          Cabinet creation and sensor assignment are managed in the cloud dashboard at
+          <a href="https://app.chillcheck.online/dashboard/sensors" target="_blank" rel="noopener" style="color:#161616;font-weight:600;text-decoration:underline">app.chillcheck.online</a>.
+          This page is for pairing and hub health only.
+        </div>
 
         ${unassigned.length > 0 ? `
-          <div style="font-size:10px;color:#8A8A82;letter-spacing:0.18em;text-transform:uppercase;margin-bottom:10px;font-family:'JetBrains Mono',monospace">unassigned (${unassigned.length})</div>
+          <div style="font-size:10px;color:#8A8A82;letter-spacing:0.18em;text-transform:uppercase;margin-bottom:10px;font-family:'JetBrains Mono',monospace">awaiting assignment (${unassigned.length})</div>
           ${unassigned.map(s => unassignedCard(s)).join('')}
           <div style="margin-bottom:24px"></div>
         ` : ''}
 
         <div style="font-size:10px;color:#8A8A82;letter-spacing:0.18em;text-transform:uppercase;margin-bottom:10px;font-family:'JetBrains Mono',monospace">assigned (${assigned.length})</div>
         ${assigned.length === 0
-          ? '<p style="font-size:13px;color:#8A8A82">No sensors assigned yet. Pair a sensor then assign it to a cabinet in the cloud dashboard.</p>'
+          ? '<p style="font-size:13px;color:#8A8A82">No sensors assigned yet. Pair a sensor here, then assign it in the cloud dashboard.</p>'
           : `<div style="background:#FBFAF6;border:1px solid #DDD9CC">
-               <div style="display:grid;grid-template-columns:1fr 180px 70px 80px 100px 90px;padding:10px 20px;background:#ECEAE3;border-bottom:1px solid #D8D5C6;font-size:10px;color:#6B6B66;letter-spacing:0.12em;text-transform:uppercase;font-family:'JetBrains Mono',monospace">
-                 <span>cabinet</span><span>sensor id</span><span>signal</span><span>battery</span><span>last seen</span><span></span>
+               <div style="display:grid;grid-template-columns:1fr 180px 70px 80px 110px;padding:10px 20px;background:#ECEAE3;border-bottom:1px solid #D8D5C6;font-size:10px;color:#6B6B66;letter-spacing:0.12em;text-transform:uppercase;font-family:'JetBrains Mono',monospace">
+                 <span>cabinet</span><span>sensor id</span><span>signal</span><span>battery</span><span>last seen</span>
                </div>
                ${assigned.map((s,i,a) => sensorRow(s, i, a.length)).join('')}
              </div>`
@@ -352,16 +354,16 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
     function unassignedCard(s) {
       return `
-        <div style="background:#FBFAF6;border:1px dashed #C97A1A;padding:16px 20px;display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div style="background:#FBFAF6;border:1px dashed #C97A1A;padding:16px 20px;display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:12px;flex-wrap:wrap">
           <div>
-            <div style="font-size:14px;font-weight:600;margin-bottom:4px">New Sensor</div>
+            <div style="font-size:14px;font-weight:600;margin-bottom:4px">${esc(s.name || 'New sensor')}</div>
             <div style="font-size:11px;font-family:'JetBrains Mono',monospace;color:#6B6B66;margin-bottom:6px">···${esc(s.zigbee_id?.slice(-4)||'????')} · ${esc(s.last_seen_ago||'unknown')}</div>
             <div style="display:flex;gap:12px;align-items:center">${signalBars(s.rssi)} ${batteryBadge(s.battery_pct)}</div>
           </div>
-          <button onclick="openAssign('${s.id}')"
-            style="background:#C97A1A;color:#161616;border:none;padding:9px 14px;cursor:pointer;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;font-family:inherit">
-            Assign →
-          </button>
+          <a href="https://app.chillcheck.online/dashboard/sensors" target="_blank" rel="noopener"
+            style="background:#C97A1A;color:#161616;border:none;padding:9px 14px;cursor:pointer;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;font-family:inherit;text-decoration:none">
+            Assign in cloud →
+          </a>
         </div>
       `;
     }
@@ -369,18 +371,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     function sensorRow(s, i, total) {
       const offline = s.minutes_since_seen > 30;
       return `
-        <div style="display:grid;grid-template-columns:1fr 180px 70px 80px 100px 90px;align-items:center;padding:14px 20px;border-bottom:${i<total-1?'1px solid #ECEAE3':'none'};background:${offline?'#F4EDE8':'transparent'}">
+        <div style="display:grid;grid-template-columns:1fr 180px 70px 80px 110px;align-items:center;padding:14px 20px;border-bottom:${i<total-1?'1px solid #ECEAE3':'none'};background:${offline?'#F4EDE8':'transparent'}">
           <span style="font-size:13px;font-weight:600">${esc(s.cabinet_name||'Unknown')}</span>
           <span style="font-size:11px;font-family:'JetBrains Mono',monospace;color:#6B6B66">···${esc(s.zigbee_id?.slice(-4)||'????')}</span>
           <span>${signalBars(s.rssi)}</span>
           <span>${batteryBadge(s.battery_pct)}</span>
           <span style="font-size:11px;font-family:'JetBrains Mono',monospace;color:${offline?'#C72717':'#6B6B66'}">${esc(s.last_seen_ago||'—')}</span>
-          <span style="text-align:right">
-            <button onclick="unassignSensor('${s.id}')"
-              style="background:transparent;color:#C72717;border:1px solid #C72717;padding:5px 10px;cursor:pointer;font-size:11px;font-family:inherit;letter-spacing:0.04em">
-              Unassign
-            </button>
-          </span>
         </div>
       `;
     }
@@ -429,31 +425,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 ? `<button onclick="cancelPairing();refreshSensors();" style="background:#161616;color:#ECEAE3;border:none;padding:9px 16px;cursor:pointer;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;font-family:inherit">Done</button>`
                 : ''
               }
-            </div>
-          </div>
-        </div>
-      `;
-    }
-
-    function assignModal() {
-      const opts = state.cabinets.map(c =>
-        `<option value="${c.id}">${esc(c.name)}</option>`
-      ).join('');
-      return `
-        <div style="position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:100;display:flex;align-items:center;justify-content:center">
-          <div style="background:#FBFAF6;border:1px solid #DDD9CC;padding:28px;width:380px;max-width:90vw">
-            <div style="font-size:15px;font-weight:700;margin-bottom:18px">Assign Sensor</div>
-            <label style="font-size:10px;font-weight:600;color:#8A8A82;letter-spacing:0.12em;text-transform:uppercase;display:block;margin-bottom:8px;font-family:'JetBrains Mono',monospace">Cabinet</label>
-            <select id="assignTarget" style="width:100%;padding:10px 12px;font-size:13px;border:1px solid #DDD9CC;background:#ECEAE3;color:#161616;font-family:inherit;outline:none;margin-bottom:8px">
-              <option value="">Choose a cabinet…</option>
-              ${opts}
-            </select>
-            <p style="font-size:11px;color:#8A8A82;margin:0 0 20px;line-height:1.5">
-              To create a new cabinet, use the cloud dashboard at <strong>app.chillcheck.online</strong>
-            </p>
-            <div style="display:flex;gap:8px;justify-content:flex-end">
-              <button onclick="closeAssign()" style="background:transparent;color:#161616;border:1px solid #DDD9CC;padding:9px 14px;cursor:pointer;font-size:11px;letter-spacing:0.06em;text-transform:uppercase;font-family:inherit">Cancel</button>
-              <button onclick="confirmAssign()" style="background:#161616;color:#ECEAE3;border:none;padding:9px 16px;cursor:pointer;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;font-family:inherit">Assign</button>
             </div>
           </div>
         </div>
@@ -658,8 +629,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
     async function loadSensors() {
       const data = await api('GET', '/api/sensors');
-      state.sensors  = data.sensors  || [];
-      state.cabinets = data.cabinets || [];
+      state.sensors = data.sensors || [];
       render();
     }
 
@@ -737,33 +707,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       state.pairingActive = false;
       state.pairingStep   = 0;
       render();
-    }
-
-    function openAssign(sensorId) {
-      state.assigningId = sensorId;
-      render();
-    }
-
-    function closeAssign() {
-      state.assigningId = null;
-      render();
-    }
-
-    async function confirmAssign() {
-      const target = document.getElementById('assignTarget')?.value;
-      if (!target) return;
-      await api('POST', '/api/sensors/assign', {
-        sensor_id:  state.assigningId,
-        cabinet_id: target,
-      });
-      state.assigningId = null;
-      await loadSensors();
-    }
-
-    async function unassignSensor(sensorId) {
-      if (!confirm('Unassign this sensor? It will stop monitoring its cabinet.')) return;
-      await api('POST', '/api/sensors/unassign', { sensor_id: sensorId });
-      await loadSensors();
     }
 
     async function scanNetworks() {
@@ -877,10 +820,13 @@ def system_page():
 
 @app.route("/api/sensors")
 def api_sensors():
-    """List all sensors and cabinets for this site."""
+    """List paired sensors with their cloud assignment status.
+    Cabinet creation/assignment lives in the cloud dashboard — we only join
+    `cabinets(name)` here so the local UI can show whether a sensor has been
+    bound to a cabinet yet, not to drive any action."""
     supabase = get_supabase()
     if not supabase:
-        return jsonify({"sensors": [], "cabinets": [], "error": "Not connected to cloud"})
+        return jsonify({"sensors": [], "error": "Not connected to cloud"})
 
     try:
         now = datetime.now(timezone.utc)
@@ -915,19 +861,11 @@ def api_sensors():
                 "minutes_since_seen": minutes_since,
             })
 
-        cabinets_res = (
-            supabase.table("cabinets")
-            .select("id, name, type, location")
-            .eq("site_id", SITE_ID)
-            .eq("active", True)
-            .execute()
-        )
-
-        return jsonify({"sensors": sensors, "cabinets": cabinets_res.data})
+        return jsonify({"sensors": sensors})
 
     except Exception as e:
         log.error(f"api_sensors error: {e}")
-        return jsonify({"sensors": [], "cabinets": [], "error": str(e)})
+        return jsonify({"sensors": [], "error": str(e)})
 
 
 @app.route("/api/sensors/pair", methods=["POST"])
@@ -956,49 +894,8 @@ def api_sensors_pair():
         return jsonify({"success": False, "error": str(e)})
 
 
-@app.route("/api/sensors/assign", methods=["POST"])
-def api_sensors_assign():
-    """Assign a sensor to a cabinet in Supabase."""
-    data      = request.json or {}
-    sensor_id = data.get("sensor_id")
-    cabinet_id= data.get("cabinet_id")
-
-    if not sensor_id or not cabinet_id:
-        return jsonify({"success": False, "error": "sensor_id and cabinet_id required"})
-
-    supabase = get_supabase()
-    if not supabase:
-        return jsonify({"success": False, "error": "Not connected to cloud"})
-
-    try:
-        supabase.table("sensors").update({
-            "cabinet_id": cabinet_id,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-        }).eq("id", sensor_id).execute()
-        return jsonify({"success": True})
-    except Exception as e:
-        log.error(f"Assign sensor failed: {e}")
-        return jsonify({"success": False, "error": str(e)})
-
-
-@app.route("/api/sensors/unassign", methods=["POST"])
-def api_sensors_unassign():
-    """Unassign a sensor from its cabinet."""
-    data      = request.json or {}
-    sensor_id = data.get("sensor_id")
-
-    supabase = get_supabase()
-    if not supabase:
-        return jsonify({"success": False, "error": "Not connected to cloud"})
-
-    try:
-        supabase.table("sensors").update({
-            "cabinet_id": None,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-        }).eq("id", sensor_id).execute()
-        return jsonify({"success": True})
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)})
+# Cabinet creation and sensor-to-cabinet assignment intentionally have no
+# endpoints here — that workflow lives in the cloud dashboard.
 
 
 # ── Network ───────────────────────────────────────────────────
