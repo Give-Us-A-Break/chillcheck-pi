@@ -490,6 +490,10 @@ section "Phase 10 — Update Mechanism"
 SETUP_DIR="$(cd "$(dirname "$0")" && pwd)"
 if [ -f "$SETUP_DIR/chillcheck-update.sh" ]; then
   sudo install -m 755 "$SETUP_DIR/chillcheck-update.sh" /usr/local/bin/chillcheck-update
+  # Strip CRLF in case the file came from a Windows checkout. A shebang line
+  # ending in \r causes the kernel to look for an interpreter literally named
+  # "/bin/bash\r" and fail with a confusing "No such file or directory".
+  sudo sed -i 's/\r$//' /usr/local/bin/chillcheck-update
   log "Installed /usr/local/bin/chillcheck-update"
 else
   warn "chillcheck-update.sh not found next to setup.sh — skipping update script install"
