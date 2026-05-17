@@ -181,13 +181,35 @@ class AlertEngine:
         except Exception as e:
             log.error(f"Failed to resolve alert {alert_id}: {e}")
 
+    @staticmethod
+    def _is_muted(cabinet: dict) -> bool:
+        """True if temperature alerts are currently muted for this cabinet."""
+        muted_until = cabinet.get("alerts_muted_until")
+        if not muted_until:
+            return False
+        try:
+            if isinstance(muted_until, str):
+                until_dt = datetime.fromisoformat(muted_until.replace("Z", "+00:00"))
+            else:
+                until_dt = muted_until
+            return until_dt > datetime.now(timezone.utc)
+        except Exception:
+            return False
+
     # ── Temperature threshold check ───────────────────────────
 
     def check_temperature(self, cabinet: dict, sensor: dict, temperature: float):
         """
         Check a reading against cabinet thresholds.
         Raises, upgrades, or resolves alerts as needed.
+        Skipped entirely while the cabinet's temperature alerts are muted —
+        readings are still recorded by the caller, but no alert state
+        transitions happen until the mute expires.
         """
+        if self._is_muted(cabinet):
+            log.debug(f"{cabinet['name']}: temperature alerts muted, skipping check")
+            return
+
         warn_low  = float(cabinet["warn_low"])
         warn_high = float(cabinet["warn_high"])
         crit_low  = float(cabinet["crit_low"])
@@ -315,6 +337,13 @@ class AlertEngine:
                 cabinet = cab_res.data
             except Exception:
                 pass
+
+            # If the cabinet's temperature alerts are muted, halt further
+            # escalation for high/low_temp alerts that were already raised.
+            # Sensor/device offline escalations are unaffected — mute is
+            # temperature-only by design.
+            if alert.get("type") in ("high_temp", "low_temp") and cabinet and self._is_muted(cabinet):
+                continue
 
             # ── Level 1: Email already sent at alert creation ──
             # Level 0 = email sent, waiting for SMS threshold
