@@ -165,6 +165,16 @@ class AlertEngine:
             }).execute()
             alert = res.data[0]
             log.warning(f"ALERT raised: [{severity.upper()}] {message}")
+            self._audit_alert_event(
+                "alert.raised",
+                alert_id=alert["id"],
+                alert_type=alert_type,
+                severity=severity,
+                cabinet=cabinet,
+                sensor=sensor,
+                temperature=temperature,
+                message=message,
+            )
             notify(alert["id"], "email")
             return alert
         except Exception as e:
@@ -174,12 +184,83 @@ class AlertEngine:
     def _resolve_alert(self, alert_id: str):
         """Mark an alert as resolved."""
         try:
-            self.supabase.table("alerts").update({
-                "resolved_at": datetime.now(timezone.utc).isoformat(),
-            }).eq("id", alert_id).execute()
+            res = (
+                self.supabase.table("alerts")
+                .update({"resolved_at": datetime.now(timezone.utc).isoformat()})
+                .eq("id", alert_id)
+                .execute()
+            )
+            alert = res.data[0] if res.data else None
             log.info(f"Alert {alert_id} resolved")
+            if alert:
+                # Best-effort cabinet name lookup so the compliance audit row
+                # reads cleanly without a join. Skipped silently on failure
+                # because resolution must succeed even if the audit lookup doesn't.
+                cabinet_name = None
+                cab_id = alert.get("cabinet_id")
+                if cab_id:
+                    try:
+                        cab_res = (
+                            self.supabase.table("cabinets")
+                            .select("name")
+                            .eq("id", cab_id)
+                            .single()
+                            .execute()
+                        )
+                        cabinet_name = (cab_res.data or {}).get("name")
+                    except Exception:
+                        pass
+                self._audit_alert_event(
+                    "alert.resolved",
+                    alert_id=alert_id,
+                    alert_type=alert.get("type"),
+                    severity=alert.get("severity"),
+                    cabinet={"id": cab_id, "name": cabinet_name} if cab_id else None,
+                    sensor={"id": alert.get("sensor_id")} if alert.get("sensor_id") else None,
+                )
         except Exception as e:
             log.error(f"Failed to resolve alert {alert_id}: {e}")
+
+    def _audit_alert_event(
+        self,
+        action: str,
+        alert_id: str,
+        alert_type: Optional[str],
+        severity: Optional[str],
+        cabinet: Optional[dict] = None,
+        sensor: Optional[dict] = None,
+        temperature: Optional[float] = None,
+        message: Optional[str] = None,
+    ):
+        """Write an alert lifecycle event (raised / escalated / resolved) to audit_log.
+
+        System events have profile_id = null. Best-effort — never blocks the
+        primary action if the audit write fails.
+        """
+        try:
+            metadata = {
+                "alert_id":     alert_id,
+                "alert_type":   alert_type,
+                "severity":     severity,
+                "cabinet_id":   (cabinet or {}).get("id"),
+                "cabinet_name": (cabinet or {}).get("name"),
+                "sensor_id":    (sensor or {}).get("id"),
+            }
+            if temperature is not None:
+                try:
+                    metadata["temperature"] = float(temperature)
+                except (TypeError, ValueError):
+                    pass
+            if message:
+                metadata["message_preview"] = message[:140]
+            self.supabase.table("audit_log").insert({
+                "organisation_id": self.organisation_id,
+                "profile_id":      None,
+                "action":          action,
+                "metadata":        metadata,
+            }).execute()
+        except Exception as e:
+            log.error(f"Failed to write {action} audit row: {e}")
 
     @staticmethod
     def _is_muted(cabinet: dict) -> bool:
