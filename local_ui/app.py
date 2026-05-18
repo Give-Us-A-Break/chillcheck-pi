@@ -30,12 +30,14 @@ import json
 import subprocess
 import threading
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 
-from flask import Flask, jsonify, request, render_template_string, redirect
+from flask import Flask, jsonify, request, render_template_string, redirect, session
 from flask_cors import CORS
 from dotenv import load_dotenv
+
+import auth as ui_auth
 
 load_dotenv("/etc/chillcheck/.env")
 
@@ -46,7 +48,6 @@ ORGANISATION_ID     = os.getenv("ORGANISATION_ID", "")
 SITE_ID             = os.getenv("SITE_ID", "")
 DEVICE_ID           = os.getenv("DEVICE_ID", "")
 NOTIFY_SECRET       = os.getenv("NOTIFY_SECRET", "")
-LOCAL_UI_SECRET     = os.getenv("LOCAL_UI_SECRET", "chillcheck")
 PORT                = int(os.getenv("LOCAL_UI_PORT", 80))
 VERCEL_URL          = os.getenv("VERCEL_URL", "https://app.chillcheck.online")
 
@@ -57,6 +58,38 @@ log = logging.getLogger("chillcheck.local_ui")
 # ── Flask app ─────────────────────────────────────────────────
 app = Flask(__name__)
 CORS(app)
+
+# ── Auth state (loaded once at startup; mutated in-place on change) ──
+_auth_state = ui_auth.load_or_init()
+app.secret_key = _auth_state["session_secret"]
+app.permanent_session_lifetime = timedelta(days=30)
+
+# Endpoints accessible without an authed session.
+_PUBLIC_API_PATHS = {
+    "/api/auth/status",
+    "/api/auth/login",
+    "/api/auth/logout",
+}
+
+
+@app.before_request
+def _gate_api():
+    """Single auth gate for every /api/* route except the public auth ones.
+
+    HTML views are not gated here — the SPA renders the login view itself
+    based on /api/auth/status, so the page shell can still load when
+    signed out.
+    """
+    path = request.path
+    if not path.startswith("/api/"):
+        return None
+    if path in _PUBLIC_API_PATHS:
+        return None
+    if not session.get("authed"):
+        return jsonify({"error": "unauthorized"}), 401
+    if session.get("must_change") and path != "/api/auth/change-password":
+        return jsonify({"error": "password_change_required"}), 403
+    return None
 
 # ── Pairing mode state ────────────────────────────────────────
 pairing_active   = False
@@ -124,6 +157,14 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     let state = {
       view: '{{ initial_view }}',
       cloudConnected: {{ 'true' if cloud_connected else 'false' }},
+      authed: false,
+      mustChangePassword: false,
+      authChecked: false,
+      loginUsername: 'admin',
+      loginPassword: '',
+      loginError: '',
+      changePwError: '',
+      changePwBusy: false,
       sensors: [],
       networkStatus: null,
       networks: [],
@@ -132,6 +173,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       updateInProgress: false,
       pairingActive: false,
       pairingStep: 0,
+      logsUnit: 'chillcheck-subscriber',
+      logsContent: '',
+      logsLoading: false,
+      logsError: '',
+      logsAutoRefresh: false,
+      logsTimer: null,
     };
 
     const $ = id => document.getElementById(id);
@@ -145,10 +192,43 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     }
 
     function render() {
-      document.getElementById('app').innerHTML = layout();
+      // Reset the loader-only centering on #app so rendered content fills
+      // the viewport instead of shrinking to its intrinsic width.
+      const app = document.getElementById('app');
+      app.style.display = 'block';
+      app.style.alignItems = '';
+      app.style.justifyContent = '';
+      app.style.minHeight = '';
+      app.innerHTML = layout();
     }
 
     function layout() {
+      // Until /api/auth/status resolves we keep the loader visible.
+      if (!state.authChecked) {
+        return `
+          <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#ECEAE3">
+            <div>
+              <div class="cc-load-mark">ChillCheck<span>.</span></div>
+              <div class="cc-load-sub">loading…</div>
+            </div>
+          </div>
+        `;
+      }
+      // Auth screens render bare — no nav, no utility bar.
+      if (!state.authed) {
+        return `
+          <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#ECEAE3;color:#161616;font-family:'Inter Tight',sans-serif;padding:20px">
+            ${viewLogin()}
+          </div>
+        `;
+      }
+      if (state.mustChangePassword) {
+        return `
+          <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#ECEAE3;color:#161616;font-family:'Inter Tight',sans-serif;padding:20px">
+            ${viewChangePassword(true)}
+          </div>
+        `;
+      }
       return `
         <div style="min-height:100vh;display:flex;flex-direction:column;background:#ECEAE3;color:#161616;font-family:'Inter Tight',sans-serif">
           ${utilityBar()}
@@ -167,10 +247,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
            <a href="${'{{ vercel_url }}'}" target="_blank" style="color:#C0BDB3;text-decoration:none;border-left:1px solid #4A4A45;padding-left:10px;margin-left:6px">Open dashboard ↗</a>`
         : `<span style="width:6px;height:6px;border-radius:50%;background:#C97A1A;display:inline-block;flex-shrink:0"></span>
            <span style="text-transform:uppercase;color:#A8A89F">not linked to cloud</span>`;
+      const signout = `
+        <button onclick="doLogout()" style="background:transparent;border:none;color:#A8A89F;text-transform:uppercase;letter-spacing:0.06em;font-size:11px;cursor:pointer;font-family:inherit;border-left:1px solid #4A4A45;padding-left:10px;margin-left:6px">Sign out</button>
+      `;
       return `
         <div style="background:#161616;color:#C0BDB3;padding:10px 28px;display:flex;justify-content:space-between;align-items:center;font-size:11px;letter-spacing:0.06em;font-family:'Inter Tight',sans-serif;gap:16px;flex-wrap:wrap">
           <span style="font-family:'JetBrains Mono',monospace">chillcheck.local</span>
-          <div style="display:flex;align-items:center;gap:8px">${right}</div>
+          <div style="display:flex;align-items:center;gap:8px">${right}${signout}</div>
         </div>
       `;
     }
@@ -180,6 +263,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         { id: 'connect', label: 'Cloud Link', dot: !state.cloudConnected },
         { id: 'sensors', label: 'Sensors' },
         { id: 'network', label: 'Network' },
+        { id: 'logs',    label: 'Logs' },
         { id: 'system',  label: 'System' },
       ];
       return `
@@ -213,7 +297,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         case 'connect': return viewConnect();
         case 'sensors': return viewSensors();
         case 'network': return viewNetwork();
+        case 'logs':    return viewLogs();
         case 'system':  return viewSystem();
+        case 'change_password': return viewChangePassword(false);
         default:        return viewSensors();
       }
     }
@@ -586,6 +672,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
             <div style="font-size:10px;color:#8A8A82;letter-spacing:0.18em;text-transform:uppercase;margin-bottom:10px;font-family:'JetBrains Mono',monospace">maintenance</div>
             <button onclick="restartService('all')" style="width:100%;background:transparent;border:1px solid #161616;color:#161616;padding:12px 14px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;cursor:pointer;font-family:inherit;text-align:left;margin-bottom:6px">Restart all services</button>
+            <button onclick="navigate('change_password')" style="width:100%;background:transparent;border:1px solid #DDD9CC;color:#161616;padding:12px 14px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;cursor:pointer;font-family:inherit;text-align:left;margin-bottom:6px">Change password</button>
 
             <div style="margin-top:18px;padding:16px;background:#161616;color:#ECEAE3;border-top:3px solid #C72717">
               <div style="font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#E5B0A8;margin-bottom:6px">danger zone</div>
@@ -596,6 +683,129 @@ HTML_TEMPLATE = """<!DOCTYPE html>
               </button>
             </div>
           </aside>
+        </div>
+      `;
+    }
+
+    // ── Auth views ───────────────────────────────────────────
+
+    function viewLogin() {
+      return `
+        <div style="background:#FBFAF6;border:1px solid #DDD9CC;padding:36px 32px;width:380px;max-width:100%">
+          <div style="font-family:'Instrument Serif',Georgia,serif;font-size:36px;line-height:0.95;letter-spacing:-0.02em;margin-bottom:4px">
+            ChillCheck<span style="color:#C97A1A">.</span>
+          </div>
+          <div style="font-size:10px;color:#8A8A82;letter-spacing:0.18em;text-transform:uppercase;margin-bottom:24px;font-family:'JetBrains Mono',monospace">local installer console · sign in</div>
+
+          ${state.loginError ? `<div style="background:#FAE9E6;border:1px solid #C72717;color:#7A1D12;padding:10px 12px;font-size:12px;margin-bottom:14px">${esc(state.loginError)}</div>` : ''}
+
+          <label style="display:block;font-size:10px;color:#6B6B66;letter-spacing:0.12em;text-transform:uppercase;margin-bottom:6px">Username</label>
+          <input id="login-username" type="text" value="admin" readonly
+            style="width:100%;border:1px solid #DDD9CC;background:#ECEAE3;color:#6B6B66;padding:10px 12px;font-family:'JetBrains Mono',monospace;font-size:13px;margin-bottom:16px">
+
+          <label style="display:block;font-size:10px;color:#6B6B66;letter-spacing:0.12em;text-transform:uppercase;margin-bottom:6px">Password</label>
+          <input id="login-password" type="password" placeholder="chillcheck"
+            onkeydown="if(event.key==='Enter')doLogin()"
+            style="width:100%;border:1px solid #DDD9CC;background:#FFF;color:#161616;padding:10px 12px;font-family:'JetBrains Mono',monospace;font-size:13px;margin-bottom:20px">
+
+          <button onclick="doLogin()"
+            style="width:100%;background:#161616;color:#ECEAE3;border:none;padding:12px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;cursor:pointer;font-family:inherit">
+            Sign in
+          </button>
+
+          <div style="font-size:11px;color:#8A8A82;margin-top:18px;line-height:1.55">
+            Default password is <span style="font-family:'JetBrains Mono',monospace;color:#161616">chillcheck</span>. You'll be asked to change it on first login.
+          </div>
+        </div>
+      `;
+    }
+
+    function viewChangePassword(forced) {
+      const title = forced ? 'Set a new password' : 'Change password';
+      const subtitle = forced
+        ? 'The default password must be replaced before this console can be used.'
+        : 'Update the password used to sign in to this hub.';
+      return `
+        <div style="background:#FBFAF6;border:1px solid #DDD9CC;padding:36px 32px;width:420px;max-width:100%">
+          <div style="font-family:'Instrument Serif',Georgia,serif;font-size:32px;line-height:0.95;letter-spacing:-0.02em;margin-bottom:6px">${esc(title)}</div>
+          <div style="font-size:12px;color:#6B6B66;margin-bottom:22px;line-height:1.55">${esc(subtitle)}</div>
+
+          ${state.changePwError ? `<div style="background:#FAE9E6;border:1px solid #C72717;color:#7A1D12;padding:10px 12px;font-size:12px;margin-bottom:14px">${esc(state.changePwError)}</div>` : ''}
+
+          <label style="display:block;font-size:10px;color:#6B6B66;letter-spacing:0.12em;text-transform:uppercase;margin-bottom:6px">Current password</label>
+          <input id="cpw-current" type="password" autocomplete="current-password"
+            style="width:100%;border:1px solid #DDD9CC;background:#FFF;color:#161616;padding:10px 12px;font-family:'JetBrains Mono',monospace;font-size:13px;margin-bottom:14px">
+
+          <label style="display:block;font-size:10px;color:#6B6B66;letter-spacing:0.12em;text-transform:uppercase;margin-bottom:6px">New password</label>
+          <input id="cpw-new" type="password" autocomplete="new-password"
+            style="width:100%;border:1px solid #DDD9CC;background:#FFF;color:#161616;padding:10px 12px;font-family:'JetBrains Mono',monospace;font-size:13px;margin-bottom:14px">
+
+          <label style="display:block;font-size:10px;color:#6B6B66;letter-spacing:0.12em;text-transform:uppercase;margin-bottom:6px">Confirm new password</label>
+          <input id="cpw-confirm" type="password" autocomplete="new-password"
+            onkeydown="if(event.key==='Enter')doChangePassword()"
+            style="width:100%;border:1px solid #DDD9CC;background:#FFF;color:#161616;padding:10px 12px;font-family:'JetBrains Mono',monospace;font-size:13px;margin-bottom:20px">
+
+          <div style="display:flex;gap:8px">
+            <button onclick="doChangePassword()" ${state.changePwBusy ? 'disabled' : ''}
+              style="flex:1;background:#161616;color:#ECEAE3;border:none;padding:12px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;cursor:${state.changePwBusy?'wait':'pointer'};font-family:inherit;opacity:${state.changePwBusy?0.6:1}">
+              ${state.changePwBusy ? 'Saving…' : 'Set password'}
+            </button>
+            ${!forced ? `
+              <button onclick="navigate('system')"
+                style="background:transparent;color:#161616;border:1px solid #DDD9CC;padding:12px 16px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;cursor:pointer;font-family:inherit">
+                Cancel
+              </button>` : ''}
+          </div>
+
+          <div style="font-size:11px;color:#8A8A82;margin-top:18px;line-height:1.55">
+            Minimum 8 characters. If you forget this password, the device must be reflashed — there is no recovery flow.
+          </div>
+        </div>
+      `;
+    }
+
+    // ── Logs view ────────────────────────────────────────────
+
+    function viewLogs() {
+      const units = [
+        { unit: 'chillcheck-subscriber', label: 'Subscriber' },
+        { unit: 'zigbee2mqtt',           label: 'Zigbee2MQTT' },
+        { unit: 'mosquitto',             label: 'Mosquitto' },
+        { unit: 'chillcheck-local-ui',   label: 'Local UI' },
+      ];
+      const body = state.logsError
+        ? `<div style="color:#C72717;padding:14px 16px">${esc(state.logsError)}</div>`
+        : state.logsLoading && !state.logsContent
+          ? `<div style="color:#8A8A82;padding:14px 16px">Loading…</div>`
+          : `<pre style="margin:0;padding:14px 16px;font-family:'JetBrains Mono',monospace;font-size:11.5px;line-height:1.5;color:#ECEAE3;white-space:pre-wrap;word-break:break-word">${esc(state.logsContent || '(no log output)')}</pre>`;
+      return `
+        <div>
+          <h1 style="font-family:'Instrument Serif',Georgia,serif;font-size:36px;font-weight:400;letter-spacing:-0.02em;margin:0 0 4px">Logs</h1>
+          <p style="font-size:13px;color:#6B6B66;margin:0 0 20px">Recent journal output for each ChillCheck service. Last 500 lines, oldest first.</p>
+
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px">
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              ${units.map(u => `
+                <button onclick="selectLogsUnit('${u.unit}')"
+                  style="background:${state.logsUnit===u.unit?'#161616':'transparent'};color:${state.logsUnit===u.unit?'#ECEAE3':'#161616'};border:1px solid #161616;padding:8px 12px;font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;cursor:pointer;font-family:inherit">
+                  ${esc(u.label)}
+                </button>
+              `).join('')}
+            </div>
+            <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+              <label style="font-size:11px;color:#6B6B66;display:inline-flex;align-items:center;gap:6px;cursor:pointer">
+                <input type="checkbox" ${state.logsAutoRefresh?'checked':''} onchange="toggleLogsAutoRefresh()"> Auto-refresh
+              </label>
+              <button onclick="loadLogs()" ${state.logsLoading?'disabled':''}
+                style="background:transparent;border:1px solid #DDD9CC;color:#161616;padding:8px 12px;font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;cursor:${state.logsLoading?'wait':'pointer'};font-family:inherit;opacity:${state.logsLoading?0.6:1}">
+                ${state.logsLoading ? 'Loading…' : 'Refresh'}
+              </button>
+            </div>
+          </div>
+
+          <div id="logs-pane" style="background:#161616;border:1px solid #161616;max-height:70vh;overflow:auto">
+            ${body}
+          </div>
         </div>
       `;
     }
@@ -620,11 +830,135 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     // ── Actions ──────────────────────────────────────────────
 
     function navigate(view) {
+      // Stop any auto-refresh tied to the previous view.
+      if (state.logsTimer) { clearInterval(state.logsTimer); state.logsTimer = null; state.logsAutoRefresh = false; }
       state.view = view;
       render();
       if (view === 'sensors') loadSensors();
       if (view === 'network') loadNetwork();
       if (view === 'system')  loadSystem();
+      if (view === 'logs')    loadLogs();
+    }
+
+    // ── Auth actions ─────────────────────────────────────────
+
+    async function checkAuthStatus() {
+      try {
+        const s = await api('GET', '/api/auth/status');
+        state.authed = !!s.authed;
+        state.mustChangePassword = !!s.must_change;
+      } catch (e) {
+        state.authed = false;
+      }
+      state.authChecked = true;
+      render();
+    }
+
+    async function doLogin() {
+      const pw = document.getElementById('login-password').value;
+      state.loginError = '';
+      render();
+      const res = await api('POST', '/api/auth/login', { username: 'admin', password: pw });
+      if (res.ok) {
+        state.authed = true;
+        state.mustChangePassword = !!res.must_change;
+        state.loginPassword = '';
+        render();
+        if (!state.mustChangePassword) {
+          // Load whatever the active view needs.
+          bootstrapAuthedViews();
+        }
+      } else {
+        state.loginError = res.error || 'Sign in failed';
+        render();
+      }
+    }
+
+    async function doChangePassword() {
+      const current = document.getElementById('cpw-current').value;
+      const newPw   = document.getElementById('cpw-new').value;
+      const confirm = document.getElementById('cpw-confirm').value;
+      state.changePwError = '';
+      state.changePwBusy = true;
+      render();
+      const res = await api('POST', '/api/auth/change-password', {
+        current_password: current, new_password: newPw, confirm_password: confirm,
+      });
+      state.changePwBusy = false;
+      if (res.ok) {
+        state.mustChangePassword = false;
+        state.changePwError = '';
+        // After a voluntary change we were on the change_password view —
+        // drop back to System. After a forced change, the layout will
+        // re-render to the normal chrome.
+        if (state.view === 'change_password') state.view = 'system';
+        render();
+        bootstrapAuthedViews();
+      } else {
+        state.changePwError = res.error || 'Could not save password';
+        render();
+      }
+    }
+
+    async function doLogout() {
+      if (state.logsTimer) { clearInterval(state.logsTimer); state.logsTimer = null; }
+      await api('POST', '/api/auth/logout');
+      state.authed = false;
+      state.mustChangePassword = false;
+      state.loginError = '';
+      state.view = 'sensors';
+      render();
+    }
+
+    function bootstrapAuthedViews() {
+      loadCloudInfo();
+      if (state.view === 'sensors') loadSensors();
+      if (state.view === 'network') loadNetwork();
+      if (state.view === 'system')  loadSystem();
+      if (state.view === 'logs')    loadLogs();
+    }
+
+    // ── Logs actions ─────────────────────────────────────────
+
+    function selectLogsUnit(unit) {
+      state.logsUnit = unit;
+      state.logsContent = '';
+      render();
+      loadLogs();
+    }
+
+    async function loadLogs() {
+      state.logsLoading = true;
+      state.logsError = '';
+      render();
+      try {
+        const res = await api('GET', '/api/logs/' + encodeURIComponent(state.logsUnit) + '?lines=500');
+        if (res.error && !res.log) {
+          state.logsError = res.error;
+          state.logsContent = '';
+        } else {
+          state.logsContent = res.log || '';
+          state.logsError = res.error || '';
+        }
+      } catch (e) {
+        state.logsError = String(e);
+      }
+      state.logsLoading = false;
+      render();
+      // Scroll log pane to the latest line.
+      const pane = document.getElementById('logs-pane');
+      if (pane) pane.scrollTop = pane.scrollHeight;
+    }
+
+    function toggleLogsAutoRefresh() {
+      state.logsAutoRefresh = !state.logsAutoRefresh;
+      if (state.logsAutoRefresh) {
+        state.logsTimer = setInterval(loadLogs, 5000);
+      } else if (state.logsTimer) {
+        clearInterval(state.logsTimer);
+        state.logsTimer = null;
+      }
+      render();
     }
 
     async function loadSensors() {
@@ -774,11 +1108,15 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       } catch (e) { /* offline-tolerant */ }
     }
 
+    // Bootstrap: render the loader, then resolve auth status. Once authed,
+    // load whatever the active view needs.
     render();
-    loadCloudInfo();
-    if (state.view === 'sensors') loadSensors();
-    if (state.view === 'network') loadNetwork();
-    if (state.view === 'system')  loadSystem();
+    (async () => {
+      await checkAuthStatus();
+      if (state.authed && !state.mustChangePassword) {
+        bootstrapAuthedViews();
+      }
+    })();
   </script>
 </body>
 </html>
@@ -815,6 +1153,60 @@ def system_page():
 # ════════════════════════════════════════════════════════════
 # ROUTES — API
 # ════════════════════════════════════════════════════════════
+
+# ── Auth ──────────────────────────────────────────────────────
+
+@app.route("/api/auth/status")
+def api_auth_status():
+    return jsonify({
+        "authed":       bool(session.get("authed")),
+        "must_change":  bool(session.get("must_change")),
+        "username":     ui_auth.USERNAME,
+    })
+
+
+@app.route("/api/auth/login", methods=["POST"])
+def api_auth_login():
+    body = request.get_json(silent=True) or {}
+    username = (body.get("username") or "").strip()
+    password = body.get("password") or ""
+
+    if username != ui_auth.USERNAME:
+        return jsonify({"error": "Invalid credentials"}), 401
+    if not ui_auth.verify_password(password, _auth_state):
+        return jsonify({"error": "Invalid credentials"}), 401
+
+    session.permanent = True
+    session["authed"] = True
+    session["must_change"] = bool(_auth_state.get("must_change"))
+    return jsonify({"ok": True, "must_change": session["must_change"]})
+
+
+@app.route("/api/auth/change-password", methods=["POST"])
+def api_auth_change_password():
+    body = request.get_json(silent=True) or {}
+    current = body.get("current_password") or ""
+    new_pw = body.get("new_password") or ""
+    confirm = body.get("confirm_password") or ""
+
+    if not ui_auth.verify_password(current, _auth_state):
+        return jsonify({"error": "Current password is incorrect"}), 400
+    if new_pw != confirm:
+        return jsonify({"error": "New passwords do not match"}), 400
+    err = ui_auth.validate_new_password(new_pw)
+    if err:
+        return jsonify({"error": err}), 400
+
+    ui_auth.set_password(_auth_state, new_pw)
+    session["must_change"] = False
+    return jsonify({"ok": True})
+
+
+@app.route("/api/auth/logout", methods=["POST"])
+def api_auth_logout():
+    session.clear()
+    return jsonify({"ok": True})
+
 
 # ── Sensors ───────────────────────────────────────────────────
 
@@ -1069,6 +1461,53 @@ def api_system_restart():
             return jsonify({"success": True})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
+
+
+# ── Logs ──────────────────────────────────────────────────────
+
+# Whitelist of journal units the local UI is allowed to read. Anything
+# outside this set is rejected before journalctl is invoked — defence in
+# depth on top of the NOPASSWD sudoers rule.
+_LOG_UNITS = {
+    "chillcheck-subscriber": "ChillCheck Subscriber",
+    "zigbee2mqtt":           "Zigbee2MQTT",
+    "mosquitto":             "Mosquitto",
+    "chillcheck-local-ui":   "Local UI",
+}
+
+
+@app.route("/api/logs/units")
+def api_logs_units():
+    return jsonify({"units": [{"unit": k, "label": v} for k, v in _LOG_UNITS.items()]})
+
+
+@app.route("/api/logs/<unit>")
+def api_logs(unit):
+    if unit not in _LOG_UNITS:
+        return jsonify({"error": "unknown unit"}), 400
+    try:
+        lines = int(request.args.get("lines", 500))
+    except ValueError:
+        lines = 500
+    lines = max(50, min(lines, 2000))
+    try:
+        result = subprocess.run(
+            ["sudo", "-n", "/usr/bin/journalctl",
+             "-u", unit, "-n", str(lines), "--no-pager", "--output=short-iso"],
+            capture_output=True, text=True, timeout=15,
+        )
+        if result.returncode != 0:
+            return jsonify({
+                "unit":    unit,
+                "log":     result.stdout,
+                "error":   result.stderr.strip() or f"journalctl exit {result.returncode}",
+            })
+        return jsonify({"unit": unit, "log": result.stdout, "lines": lines})
+    except subprocess.TimeoutExpired:
+        return jsonify({"error": "journalctl timed out"}), 504
+    except Exception as e:
+        log.error(f"Logs fetch for {unit} failed: {e}")
+        return jsonify({"error": str(e)}), 500
 
 
 # ── Cloud pairing ─────────────────────────────────────────────

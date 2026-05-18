@@ -322,7 +322,6 @@ HEARTBEAT_URL=https://heartbeat.uptimerobot.com/your-monitor-key
 
 # ── Local UI ─────────────────────────────────────────────────
 LOCAL_UI_PORT=80
-LOCAL_UI_SECRET=change-me-to-a-random-string
 
 # ── Logging ──────────────────────────────────────────────────
 LOG_LEVEL=INFO
@@ -512,6 +511,13 @@ fi
 echo "$USER ALL=(root) NOPASSWD: /usr/local/bin/chillcheck-update" | sudo tee /etc/sudoers.d/chillcheck-update > /dev/null
 sudo chmod 0440 /etc/sudoers.d/chillcheck-update
 log "Granted $USER passwordless sudo for /usr/local/bin/chillcheck-update"
+
+# Sudoers rule for journalctl so the local UI's Logs tab can read service
+# journals. Scoped to /usr/bin/journalctl only; the route whitelists
+# unit names before invoking the command.
+echo "$USER ALL=(root) NOPASSWD: /usr/bin/journalctl" | sudo tee /etc/sudoers.d/chillcheck-journalctl > /dev/null
+sudo chmod 0440 /etc/sudoers.d/chillcheck-journalctl
+log "Granted $USER passwordless sudo for /usr/bin/journalctl"
 
 
 # ════════════════════════════════════════════════════════════
