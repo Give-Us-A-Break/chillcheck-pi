@@ -47,6 +47,7 @@ fi
 INSTALL_DIR="/opt/chillcheck"
 CONFIG_DIR="/etc/chillcheck"
 LOG_DIR="/var/log/chillcheck"
+DATA_DIR="/var/lib/chillcheck"
 USER=$(whoami)
 
 echo ""
@@ -89,8 +90,10 @@ log "Creating ChillCheck directories..."
 sudo mkdir -p "$INSTALL_DIR"
 sudo mkdir -p "$CONFIG_DIR"
 sudo mkdir -p "$LOG_DIR"
+sudo mkdir -p "$DATA_DIR"
 sudo chown -R "$USER:$USER" "$INSTALL_DIR"
 sudo chown -R "$USER:$USER" "$LOG_DIR"
+sudo chown -R "$USER:$USER" "$DATA_DIR"
 
 
 # ════════════════════════════════════════════════════════════

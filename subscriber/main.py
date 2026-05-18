@@ -20,6 +20,7 @@ import os
 import sys
 import json
 import time
+import uuid
 import logging
 import threading
 import schedule
@@ -33,6 +34,7 @@ from dotenv import load_dotenv
 from alerting import AlertEngine
 from heartbeat import HeartbeatService
 from notifications import send_battery_digest
+from buffer import ReadingBuffer
 
 # ── Load environment ──────────────────────────────────────────
 load_dotenv("/etc/chillcheck/.env")
@@ -46,6 +48,7 @@ MQTT_HOST           = os.getenv("MQTT_HOST", "127.0.0.1")
 MQTT_PORT           = int(os.getenv("MQTT_PORT", 1883))
 MQTT_TOPIC_PREFIX   = os.getenv("MQTT_TOPIC_PREFIX", "zigbee2mqtt")
 LOG_LEVEL           = os.getenv("LOG_LEVEL", "INFO")
+BUFFER_DB_PATH      = os.getenv("BUFFER_DB_PATH", "/var/lib/chillcheck/buffer.db")
 
 # ── Logging ───────────────────────────────────────────────────
 logging.basicConfig(
@@ -129,10 +132,11 @@ class SensorCache:
 # ════════════════════════════════════════════════════════════
 
 class ReadingProcessor:
-    def __init__(self, supabase: Client, cache: SensorCache, alert_engine):
+    def __init__(self, supabase: Client, cache: SensorCache, alert_engine, buffer: ReadingBuffer):
         self.supabase      = supabase
         self.cache         = cache
         self.alert_engine  = alert_engine
+        self.buffer        = buffer
 
     def process(self, zigbee_id: str, payload: dict):
         """Process a reading from a Zigbee2MQTT message."""
@@ -181,22 +185,38 @@ class ReadingProcessor:
         except Exception as e:
             log.error(f"Failed to update sensor {sensor_id}: {e}")
 
-        # ── 4. Write reading to Supabase ──────────────────────
-        if cabinet_id:
-            try:
-                self.supabase.table("readings").insert({
-                    "organisation_id": ORGANISATION_ID,
-                    "site_id":         SITE_ID,
-                    "cabinet_id":      cabinet_id,
-                    "sensor_id":       sensor_id,
-                    "temperature":     temperature,
-                    "recorded_at":     now,
-                }).execute()
-            except Exception as e:
-                log.error(f"Failed to insert reading: {e}")
-                return
-        else:
+        # ── 4. Write reading to Supabase (buffer on failure) ──
+        if not cabinet_id:
             log.debug(f"Sensor {zigbee_id} not assigned to a cabinet — reading not logged")
+            return
+
+        reading_row = {
+            "id":              str(uuid.uuid4()),
+            "organisation_id": ORGANISATION_ID,
+            "site_id":         SITE_ID,
+            "cabinet_id":      cabinet_id,
+            "sensor_id":       sensor_id,
+            "temperature":     temperature,
+            "recorded_at":     now,
+        }
+
+        reading_synced = False
+        try:
+            self.supabase.table("readings").insert(reading_row).execute()
+            reading_synced = True
+        except Exception as e:
+            # Supabase unreachable or rejected — persist locally so the
+            # reading isn't lost. Drain task syncs it on next tick.
+            log.warning(f"Supabase reading insert failed, buffering: {e}")
+            try:
+                self.buffer.enqueue(reading_row)
+            except Exception as buf_err:
+                log.error(f"Local buffer write also failed: {buf_err}")
+
+        # If the reading didn't reach Supabase, skip alerting — the
+        # AlertEngine would also fail to insert. Retrospective threshold
+        # checks against buffered readings come in slice 2.
+        if not reading_synced:
             return
 
         # ── 5. Threshold check ────────────────────────────────
@@ -459,15 +479,25 @@ def main():
     # ── Build services ────────────────────────────────────────
     cache         = SensorCache(supabase)
     alert_engine  = AlertEngine(supabase, ORGANISATION_ID, SITE_ID, DEVICE_ID)
-    processor     = ReadingProcessor(supabase, cache, alert_engine)
+    reading_buffer = ReadingBuffer(db_path=BUFFER_DB_PATH)
+    processor     = ReadingProcessor(supabase, cache, alert_engine, reading_buffer)
     offline_check = OfflineChecker(supabase, cache, alert_engine)
     heartbeat     = HeartbeatService(supabase, DEVICE_ID)
+
+    initial_buffer_size = reading_buffer.size()
+    if initial_buffer_size > 0:
+        log.warning(f"Startup: {initial_buffer_size} reading(s) pending in local buffer from previous session")
+
+    def drain_reading_buffer():
+        if reading_buffer.size() > 0:
+            reading_buffer.drain(supabase)
 
     # ── Schedule periodic tasks ───────────────────────────────
     schedule.every(5).minutes.do(cache.refresh)
     schedule.every(1).minutes.do(offline_check.check)
     schedule.every(5).minutes.do(heartbeat.ping)
     schedule.every(1).minutes.do(alert_engine.process_escalations)
+    schedule.every(1).minutes.do(drain_reading_buffer)
     # Weekly battery health digest. Endpoint is a no-op when no sensors are low,
     # so it's safe to fire on a fixed cadence without filtering on this end.
     schedule.every().monday.at("09:00").do(send_battery_digest)
@@ -482,6 +512,7 @@ def main():
     # Run initial checks immediately
     offline_check.check()
     heartbeat.ping()
+    drain_reading_buffer()
 
     # ── Start MQTT loop (blocking) ────────────────────────────
     mqtt_client = ChillCheckMQTT(processor)
