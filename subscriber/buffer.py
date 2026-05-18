@@ -41,8 +41,22 @@ class ReadingBuffer:
         self.db_path = db_path
         self.max_rows = max_rows
         self._lock = threading.RLock()
-        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-        self._init_schema()
+        # Fail soft: if storage isn't writable (missing parent dir without
+        # write perm, full disk, etc.) the buffer becomes a no-op rather
+        # than crashing the subscriber. Losing offline-buffering is far
+        # less bad than losing all temperature monitoring.
+        self.enabled = False
+        try:
+            Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+            self._init_schema()
+            self.enabled = True
+        except Exception as e:
+            log.error(
+                f"ReadingBuffer disabled (storage unavailable at {db_path}): {e}. "
+                f"Subscriber will still run but readings during cloud outages will be lost. "
+                f"Provision the data dir with: sudo mkdir -p {Path(db_path).parent} && "
+                f"sudo chown chillcheck:chillcheck {Path(db_path).parent}"
+            )
 
     @contextmanager
     def _db(self):
@@ -92,6 +106,9 @@ class ReadingBuffer:
         present; otherwise a fresh UUID is generated and returned.
         """
         reading_id = reading.get("id") or str(uuid.uuid4())
+        if not self.enabled:
+            log.debug(f"Buffer disabled, dropping reading {reading_id}")
+            return reading_id
         with self._db() as conn:
             try:
                 conn.execute("""
@@ -130,6 +147,8 @@ class ReadingBuffer:
         return reading_id
 
     def size(self) -> int:
+        if not self.enabled:
+            return 0
         with self._db() as conn:
             return conn.execute("SELECT COUNT(*) FROM pending_readings").fetchone()[0]
 
@@ -142,6 +161,8 @@ class ReadingBuffer:
         as success (the row reached Supabase on a previous attempt but
         the response was lost).
         """
+        if not self.enabled:
+            return (0, 0)
         with self._db() as conn:
             rows = conn.execute("""
                 SELECT id, reading_id, organisation_id, site_id, cabinet_id,

@@ -29,8 +29,14 @@ set -o pipefail
 REPO_URL="https://github.com/Give-Us-A-Break/chillcheck-pi.git"
 INSTALL_DIR="/opt/chillcheck"
 BACKUP_DIR="/opt/chillcheck/.previous"
+DATA_DIR="/var/lib/chillcheck"
 VERSION_FILE="/etc/chillcheck/version"
 LOG_FILE="/var/log/chillcheck/update.log"
+# Service user matches the username assumed elsewhere in this script
+# (the existing chown -R below uses chillcheck:chillcheck). Hardcoded
+# rather than derived from $SUDO_USER because systemd-run loses that
+# context when we re-exec at the top of the script.
+SVC_USER="chillcheck"
 WORK_DIR="$(mktemp -d /tmp/chillcheck-update.XXXXXX)"
 trap 'rm -rf "$WORK_DIR"' EXIT
 
@@ -62,6 +68,36 @@ log "Latest version: $LATEST"
 if [ "$CURRENT" = "$LATEST" ] && [ "$CURRENT" != "(none)" ]; then
   log "Already up to date."
   exit 0
+fi
+
+# ── Provision system state ────────────────────────────────────
+# Idempotent. Catches up any system-level resources newer releases
+# expect to find. setup.sh creates these on a fresh install; the updater
+# replays them here so an existing hub can pick up changes without a
+# re-flash. Always safe to run.
+log "Provisioning system state (data dir, sudoers, log dir)"
+
+# Persistent application data (Epic 10 buffer.db lives here)
+if [ ! -d "$DATA_DIR" ]; then
+  sudo mkdir -p "$DATA_DIR"
+  log "  Created $DATA_DIR"
+fi
+sudo chown "$SVC_USER:$SVC_USER" "$DATA_DIR"
+
+# Log directory (some installs created this lazily)
+if [ ! -d "/var/log/chillcheck" ]; then
+  sudo mkdir -p /var/log/chillcheck
+  sudo chown "$SVC_USER:$SVC_USER" /var/log/chillcheck
+fi
+
+# Sudoers entry for journalctl (Logs tab needs this; only setup.sh used
+# to install it). install -m 0440 is atomic via temp + rename so a partial
+# write can't leave a syntactically broken sudoers file on disk.
+SUDOERS_JOURNAL="/etc/sudoers.d/chillcheck-journalctl"
+if ! sudo test -f "$SUDOERS_JOURNAL"; then
+  echo "$SVC_USER ALL=(root) NOPASSWD: /usr/bin/journalctl" | \
+    sudo install -m 0440 /dev/stdin "$SUDOERS_JOURNAL"
+  log "  Installed $SUDOERS_JOURNAL"
 fi
 
 # ── Back up current installation ──────────────────────────────
