@@ -44,7 +44,6 @@ UI_BOX() {
 FAILURES=0
 ENV_FILE="/etc/chillcheck/.env"
 BUFFER_DB="/var/lib/chillcheck/buffer.db"
-OUTAGE_SECS=180    # 3 min — enough for 3+ readings per cabinet at 1/min
 DRAIN_WAIT_SECS=90 # max wait for drain after restoring connectivity
 SUPABASE_HOST=""
 BLOCKED_IPS=()     # populated by _block_supabase, used by cleanup trap
@@ -210,26 +209,25 @@ else
     PASS "Confirmed: Supabase port 443 is now blocked (connection refused)"
 fi
 
-INFO "Outage window: ${OUTAGE_SECS}s (~3 readings per cabinet at 1 reading/min)"
-INFO "Waiting 70s for the first failed write cycle..."
-sleep 70
+INFO ""
+INFO "  IMPORTANT: pull the temperature probe OUT of the fridge/freezer now."
+INFO "  The sensor only reports when temperature changes — with a stable cold"
+INFO "  probe it can be silent for 20+ minutes and nothing will buffer."
+INFO "  Once the temperature is rising you'll see buffer rows counting up below."
+INFO ""
+INFO "  Leave the outage running as long as you like. When you're satisfied"
+INFO "  (check app.chillcheck.online for frozen timestamps, http://chillcheck.local"
+INFO "  for live MQTT readings, and the buffer count below), press ENTER to restore."
+INFO ""
 
-EARLY_SINCE=$(_ts_since $((OUTAGE_START_TS - 5)))
-EARLY_FAILS=$(journalctl -u chillcheck-subscriber --since "$EARLY_SINCE" \
-    --no-pager 2>/dev/null \
-    | grep -c "Supabase reading insert failed, buffering" || true)
-if [[ "$EARLY_FAILS" -gt 0 ]]; then
-    PASS "Subscriber is logging Supabase failures and buffering readings (${EARLY_FAILS} so far)"
-else
-    NOTE "No buffering messages yet — readings arrive once per minute; waiting for the next cycle"
-fi
-
-REMAINING=$((OUTAGE_SECS - 70))
-ELAPSED_EXTRA=0
-while [[ $ELAPSED_EXTRA -lt $REMAINING ]]; do
-    sleep 15; ELAPSED_EXTRA=$((ELAPSED_EXTRA + 15))
-    CURRENT_BUF=$(_buffer_count 2>/dev/null || echo 0)
-    printf "\r        %ds elapsed -- buffer size: %s row(s)..." $((70 + ELAPSED_EXTRA)) "$CURRENT_BUF"
+while true; do
+    ELAPSED=$(( $(date +%s) - OUTAGE_START_TS ))
+    BUF=$(_buffer_count 2>/dev/null || echo "?")
+    printf "\r        [%ds] buffer: %s row(s) queued — press ENTER to restore connectivity..." \
+        "$ELAPSED" "$BUF"
+    if read -t 10 -r -s; then
+        break
+    fi
 done
 echo
 
@@ -239,6 +237,7 @@ echo
 SECTION "Phase 2 -- Verifying buffer filled during outage"
 
 OUTAGE_SINCE=$(_ts_since $((OUTAGE_START_TS - 5)))
+OUTAGE_SECS=$(( $(date +%s) - OUTAGE_START_TS ))
 
 BUFFER_AFTER=$(_buffer_count)
 NEW_ROWS=$((BUFFER_AFTER - BASELINE))
@@ -250,7 +249,12 @@ if [[ "$BUFFER_AFTER" != "ERR" && "$NEW_ROWS" -gt 0 ]]; then
     INFO "  recorded_at is the Pi-side timestamp. After drain, readings slot"
     INFO "  into the chart at these exact times -- no spike, no gap."
 else
-    FAIL "No new rows in buffer after ${OUTAGE_SECS}s. Recent subscriber log:"
+    FAIL "No new rows in buffer after ${OUTAGE_SECS}s."
+    INFO "  If the probe was in a stable cold environment the sensor may not have"
+    INFO "  sent any readings (it reports on temperature change, not on a fixed timer)."
+    INFO "  Re-run with the probe out of the fridge from the start of Phase 1."
+    INFO ""
+    INFO "  Recent subscriber log:"
     journalctl -u chillcheck-subscriber --since "$OUTAGE_SINCE" --no-pager 2>/dev/null | tail -20 || true
 fi
 
