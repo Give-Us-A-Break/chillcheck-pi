@@ -146,9 +146,15 @@ class AlertEngine:
         severity: str,
         temperature: Optional[float],
         message: str,
+        triggered_at: Optional[str] = None,
     ) -> Optional[dict]:
-        """Insert a new alert row and trigger initial email notification."""
-        now = datetime.now(timezone.utc).isoformat()
+        """Insert a new alert row and trigger initial email notification.
+
+        ``triggered_at`` lets retrospective replays stamp the alert at the
+        original Pi-side ``recorded_at`` so the audit log reflects when
+        the breach actually occurred, not when we noticed it.
+        """
+        now = triggered_at or datetime.now(timezone.utc).isoformat()
         try:
             res = self.supabase.table("alerts").insert({
                 "organisation_id": self.organisation_id,
@@ -279,13 +285,29 @@ class AlertEngine:
 
     # ── Temperature threshold check ───────────────────────────
 
-    def check_temperature(self, cabinet: dict, sensor: dict, temperature: float):
+    def check_temperature(
+        self,
+        cabinet: dict,
+        sensor: dict,
+        temperature: float,
+        recorded_at: Optional[str] = None,
+        outage_duration_seconds: Optional[int] = None,
+    ):
         """
         Check a reading against cabinet thresholds.
         Raises, upgrades, or resolves alerts as needed.
         Skipped entirely while the cabinet's temperature alerts are muted —
         readings are still recorded by the caller, but no alert state
         transitions happen until the mute expires.
+
+        ``recorded_at`` and ``outage_duration_seconds`` are used by the
+        retrospective replay path (Epic 10 slice 2). When ``recorded_at``
+        is supplied, any new alert is stamped at that time rather than
+        ``now()``. When ``outage_duration_seconds`` exceeds an hour, a
+        warning-band reading is escalated straight to critical — sustained
+        breaches through long outages indicate real food-safety risk, not
+        sensor noise. The duration is appended to the alert message so
+        recipients understand the alert was retrospective.
         """
         if self._is_muted(cabinet):
             log.debug(f"{cabinet['name']}: temperature alerts muted, skipping check")
@@ -299,34 +321,55 @@ class AlertEngine:
         cabinet_id   = cabinet["id"]
         cabinet_name = cabinet["name"]
 
+        long_outage = (
+            outage_duration_seconds is not None and outage_duration_seconds >= 3600
+        )
+
+        def _with_outage_suffix(msg: str) -> str:
+            if outage_duration_seconds is None:
+                return msg
+            minutes = max(1, int(outage_duration_seconds // 60))
+            return f"{msg} (detected after {minutes}m offline period)"
+
         if temperature < crit_low or temperature > crit_high:
             severity = "critical"
             direction = "above" if temperature > crit_high else "below"
             bound = crit_high if temperature > crit_high else crit_low
-            message = (
+            message = _with_outage_suffix(
                 f"{cabinet_name}: temperature {temperature}°C is {direction} "
                 f"critical threshold ({bound}°C)"
             )
             existing = self._get_active_alert(cabinet_id, "high_temp" if temperature > crit_high else "low_temp")
             if not existing:
                 alert_type = "high_temp" if temperature > crit_high else "low_temp"
-                self._raise_alert(cabinet, sensor, alert_type, severity, temperature, message)
+                self._raise_alert(
+                    cabinet, sensor, alert_type, severity, temperature, message,
+                    triggered_at=recorded_at,
+                )
             elif existing["severity"] == "warning":
                 # Upgrade existing warning to critical
                 self._upgrade_alert(existing["id"], "critical", message)
 
         elif temperature < warn_low or temperature > warn_high:
-            severity = "warning"
+            # >60min outages bump warning-band breaches to critical — a
+            # sustained out-of-band reading through an hour-plus offline
+            # window is food-safety serious, not noise.
+            severity = "critical" if long_outage else "warning"
             direction = "above" if temperature > warn_high else "below"
             bound = warn_high if temperature > warn_high else warn_low
-            message = (
+            message = _with_outage_suffix(
                 f"{cabinet_name}: temperature {temperature}°C is {direction} "
                 f"warning threshold ({bound}°C)"
             )
             existing = self._get_active_alert(cabinet_id, "high_temp" if temperature > warn_high else "low_temp")
             if not existing:
                 alert_type = "high_temp" if temperature > warn_high else "low_temp"
-                self._raise_alert(cabinet, sensor, alert_type, severity, temperature, message)
+                self._raise_alert(
+                    cabinet, sensor, alert_type, severity, temperature, message,
+                    triggered_at=recorded_at,
+                )
+            elif severity == "critical" and existing["severity"] == "warning":
+                self._upgrade_alert(existing["id"], "critical", message)
 
         else:
             # Temperature is OK — resolve any active temp alerts

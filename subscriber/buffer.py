@@ -10,8 +10,9 @@ fails, the reading lands on disk with the same UUID it would have used in
 the cloud, so on retry Supabase either accepts the row or rejects it as a
 duplicate (idempotent).
 
-Slice 1 of Epic 10 — retrospective threshold checks against drained rows
-are slice 2.
+Slice 1 of Epic 10 ships the buffering itself; slice 2 (this revision)
+extends ``drain()`` to return the rows it just synced so the subscriber
+can replay them through the threshold checker.
 """
 
 import logging
@@ -152,17 +153,22 @@ class ReadingBuffer:
         with self._db() as conn:
             return conn.execute("SELECT COUNT(*) FROM pending_readings").fetchone()[0]
 
-    def drain(self, supabase, batch_size: int = DEFAULT_BATCH_SIZE) -> tuple[int, int]:
+    def drain(self, supabase, batch_size: int = DEFAULT_BATCH_SIZE) -> tuple[list[dict], int]:
         """Push buffered readings to Supabase in chronological order.
 
-        Returns ``(synced, remaining)``. Stops the batch on the first
-        non-duplicate failure so we don't hammer a still-down endpoint;
-        the next scheduler tick retries. Duplicate-key errors are treated
-        as success (the row reached Supabase on a previous attempt but
-        the response was lost).
+        Returns ``(drained_rows, remaining)`` — ``drained_rows`` is the
+        list of reading dicts that reached Supabase this batch (including
+        duplicate-key rows treated as already-synced), in the same
+        chronological order as they were drained. The caller uses these
+        for retrospective threshold checks (Epic 10 slice 2).
+
+        Stops the batch on the first non-duplicate failure so we don't
+        hammer a still-down endpoint; the next scheduler tick retries.
+        Duplicate-key errors are treated as success (the row reached
+        Supabase on a previous attempt but the response was lost).
         """
         if not self.enabled:
-            return (0, 0)
+            return ([], 0)
         with self._db() as conn:
             rows = conn.execute("""
                 SELECT id, reading_id, organisation_id, site_id, cabinet_id,
@@ -173,38 +179,39 @@ class ReadingBuffer:
             """, (batch_size,)).fetchall()
 
         if not rows:
-            return (0, 0)
+            return ([], 0)
 
-        synced = 0
+        drained: list[dict] = []
         for row in rows:
             row_id, reading_id, org, site, cab, sensor, temp, recorded = row
+            reading_dict = {
+                "id": reading_id,
+                "organisation_id": org,
+                "site_id": site,
+                "cabinet_id": cab,
+                "sensor_id": sensor,
+                "temperature": temp,
+                "recorded_at": recorded,
+            }
             try:
-                supabase.table("readings").insert({
-                    "id": reading_id,
-                    "organisation_id": org,
-                    "site_id": site,
-                    "cabinet_id": cab,
-                    "sensor_id": sensor,
-                    "temperature": temp,
-                    "recorded_at": recorded,
-                }).execute()
+                supabase.table("readings").insert(reading_dict).execute()
                 self._delete_row(row_id)
-                synced += 1
+                drained.append(reading_dict)
             except Exception as e:
                 err = str(e).lower()
                 if "duplicate" in err or "23505" in err or "already exists" in err:
                     log.info(f"Reading {reading_id} already in Supabase, clearing")
                     self._delete_row(row_id)
-                    synced += 1
+                    drained.append(reading_dict)
                 else:
                     self._mark_attempt(row_id)
                     log.warning(f"Drain failed for reading {reading_id}: {e}")
                     break
 
         remaining = self.size()
-        if synced > 0:
-            log.info(f"Drained {synced} buffered reading(s), {remaining} remaining")
-        return (synced, remaining)
+        if drained:
+            log.info(f"Drained {len(drained)} buffered reading(s), {remaining} remaining")
+        return (drained, remaining)
 
     def _delete_row(self, row_id: int):
         with self._db() as conn:

@@ -35,6 +35,7 @@ from alerting import AlertEngine
 from heartbeat import HeartbeatService
 from notifications import send_battery_digest
 from buffer import ReadingBuffer
+from outage import OutageTracker
 
 # ── Load environment ──────────────────────────────────────────
 load_dotenv("/etc/chillcheck/.env")
@@ -49,6 +50,11 @@ MQTT_PORT           = int(os.getenv("MQTT_PORT", 1883))
 MQTT_TOPIC_PREFIX   = os.getenv("MQTT_TOPIC_PREFIX", "zigbee2mqtt")
 LOG_LEVEL           = os.getenv("LOG_LEVEL", "INFO")
 BUFFER_DB_PATH      = os.getenv("BUFFER_DB_PATH", "/var/lib/chillcheck/buffer.db")
+OUTAGE_STATE_PATH   = os.getenv("OUTAGE_STATE_PATH", "/var/lib/chillcheck/outage.json")
+
+# Retrospective alert tiering thresholds (Epic 10 slice 2)
+RETRO_ALERT_MIN_SECONDS = 5 * 60       # < 5min outage → noise, skip replay
+RETRO_ALERT_LONG_SECONDS = 60 * 60     # ≥ 60min → bump warning band to critical
 
 # ── Logging ───────────────────────────────────────────────────
 logging.basicConfig(
@@ -117,6 +123,16 @@ class SensorCache:
         with self.lock:
             return self.sensors.get(zigbee_id)
 
+    def get_sensor_by_id(self, sensor_id: str) -> Optional[dict]:
+        """Lookup by Supabase sensor.id (UUID). Used by the retrospective
+        replay path which knows sensor_id from buffered reading rows but
+        not the zigbee_id."""
+        with self.lock:
+            for sensor in self.sensors.values():
+                if sensor.get("id") == sensor_id:
+                    return sensor
+            return None
+
     def get_cabinet(self, cabinet_id: str) -> Optional[dict]:
         with self.lock:
             return self.cabinets.get(cabinet_id)
@@ -132,11 +148,19 @@ class SensorCache:
 # ════════════════════════════════════════════════════════════
 
 class ReadingProcessor:
-    def __init__(self, supabase: Client, cache: SensorCache, alert_engine, buffer: ReadingBuffer):
-        self.supabase      = supabase
-        self.cache         = cache
-        self.alert_engine  = alert_engine
-        self.buffer        = buffer
+    def __init__(
+        self,
+        supabase: Client,
+        cache: SensorCache,
+        alert_engine,
+        buffer: ReadingBuffer,
+        outage_tracker: OutageTracker,
+    ):
+        self.supabase       = supabase
+        self.cache          = cache
+        self.alert_engine   = alert_engine
+        self.buffer         = buffer
+        self.outage_tracker = outage_tracker
 
     def process(self, zigbee_id: str, payload: dict):
         """Process a reading from a Zigbee2MQTT message."""
@@ -208,6 +232,7 @@ class ReadingProcessor:
             # Supabase unreachable or rejected — persist locally so the
             # reading isn't lost. Drain task syncs it on next tick.
             log.warning(f"Supabase reading insert failed, buffering: {e}")
+            self.outage_tracker.mark_failed_write()
             try:
                 self.buffer.enqueue(reading_row)
             except Exception as buf_err:
@@ -477,20 +502,65 @@ def main():
         log.error(f"Failed to mark device online: {e}")
 
     # ── Build services ────────────────────────────────────────
-    cache         = SensorCache(supabase)
-    alert_engine  = AlertEngine(supabase, ORGANISATION_ID, SITE_ID, DEVICE_ID)
+    cache          = SensorCache(supabase)
+    alert_engine   = AlertEngine(supabase, ORGANISATION_ID, SITE_ID, DEVICE_ID)
     reading_buffer = ReadingBuffer(db_path=BUFFER_DB_PATH)
-    processor     = ReadingProcessor(supabase, cache, alert_engine, reading_buffer)
-    offline_check = OfflineChecker(supabase, cache, alert_engine)
-    heartbeat     = HeartbeatService(supabase, DEVICE_ID)
+    outage_tracker = OutageTracker(state_path=OUTAGE_STATE_PATH)
+    processor      = ReadingProcessor(supabase, cache, alert_engine, reading_buffer, outage_tracker)
+    offline_check  = OfflineChecker(supabase, cache, alert_engine)
+    heartbeat      = HeartbeatService(supabase, DEVICE_ID)
 
     initial_buffer_size = reading_buffer.size()
     if initial_buffer_size > 0:
         log.warning(f"Startup: {initial_buffer_size} reading(s) pending in local buffer from previous session")
 
+    def replay_threshold_checks(drained_rows: list, outage_duration_seconds: int):
+        """Walk freshly-synced rows through the threshold checker so any
+        breaches that occurred during the outage raise alerts now. Order
+        matches recorded_at — the same order ``drain()`` yielded them —
+        so an out → back → out pattern resolves correctly mid-replay.
+        """
+        replayed = 0
+        for row in drained_rows:
+            cabinet = cache.get_cabinet(row["cabinet_id"])
+            if not cabinet:
+                # Cabinet deleted between buffering and drain — skip cleanly
+                continue
+            sensor = cache.get_sensor_by_id(row["sensor_id"]) or {"id": row["sensor_id"]}
+            try:
+                alert_engine.check_temperature(
+                    cabinet=cabinet,
+                    sensor=sensor,
+                    temperature=row["temperature"],
+                    recorded_at=row["recorded_at"],
+                    outage_duration_seconds=outage_duration_seconds,
+                )
+                replayed += 1
+            except Exception as e:
+                log.error(f"Retrospective check failed for reading {row.get('id')}: {e}")
+        if replayed:
+            log.info(
+                f"Replayed {replayed} buffered reading(s) through threshold checks "
+                f"(outage was {outage_duration_seconds}s)"
+            )
+
     def drain_reading_buffer():
-        if reading_buffer.size() > 0:
-            reading_buffer.drain(supabase)
+        if reading_buffer.size() == 0:
+            return
+        # Peek the outage duration BEFORE draining so all batches in a
+        # single recovery use the same tiering. drain() works in 100-row
+        # batches, so a 1000-row outage takes 10 ticks; clearing state
+        # after the first batch would leave later batches without context.
+        duration = outage_tracker.peek_duration_seconds()
+        drained_rows, remaining = reading_buffer.drain(supabase)
+        if not drained_rows:
+            # Drain hit a still-down endpoint — leave the outage window open.
+            return
+        if duration is not None and duration >= RETRO_ALERT_MIN_SECONDS:
+            replay_threshold_checks(drained_rows, duration)
+        if remaining == 0:
+            # Buffer fully drained — outage is officially over.
+            outage_tracker.clear()
 
     # ── Schedule periodic tasks ───────────────────────────────
     schedule.every(5).minutes.do(cache.refresh)
