@@ -211,7 +211,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         return `
           <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#F7F2E7">
             <div>
-              <div class="cc-load-mark">ChillCheck<span>.</span></div>
+              <div class="cc-load-mark">chillcheck<span>.</span></div>
               <div class="cc-load-sub">loading…</div>
             </div>
           </div>
@@ -248,7 +248,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         ? `<span style="width:6px;height:6px;border-radius:50%;background:#5FB28C;box-shadow:0 0 0 2px rgba(95,178,140,0.2);display:inline-block;flex-shrink:0"></span>
            <span style="text-transform:uppercase">${state.cloudInfo?.org_name ? 'cloud connected · ' + esc(state.cloudInfo.org_name) : 'cloud connected'}</span>
            <a href="${'{{ vercel_url }}'}" target="_blank" style="color:#9097A8;text-decoration:none;border-left:1px solid #4A4A45;padding-left:10px;margin-left:6px">Open dashboard ↗</a>`
-        : `<span style="width:6px;height:6px;border-radius:50%;background:#C97A1A;display:inline-block;flex-shrink:0"></span>
+        : `<span style="width:6px;height:6px;border-radius:50%;background:#FFB429;display:inline-block;flex-shrink:0"></span>
            <span style="text-transform:uppercase;color:#9097A8">not linked to cloud</span>`;
       const signout = `
         <button onclick="doLogout()" style="background:transparent;border:none;color:#9097A8;text-transform:uppercase;letter-spacing:0.06em;font-size:11px;cursor:pointer;font-family:inherit;border-left:1px solid #4A4A45;padding-left:10px;margin-left:6px">Sign out</button>
@@ -270,28 +270,58 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         { id: 'system',  label: 'System' },
       ];
       return `
-        <header style="padding:22px 28px 0;border-bottom:1px solid #EEE7D3;background:#F7F2E7">
+        <header style="padding:22px 28px 0;border-bottom:1px solid #EEE7D3;background:#FBF7EC">
           <div style="display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:18px;gap:16px;flex-wrap:wrap">
-            <div>
-              <div style="font-family:'Instrument Serif',Georgia,serif;font-size:34px;line-height:0.95;letter-spacing:-0.02em">
-                ChillCheck<span style="color:#C97A1A">.</span> <span style="font-style:italic;font-size:24px;color:#565E78">hub</span>
+            <div style="display:flex;align-items:center;gap:14px">
+              ${logoMark(36)}
+              <div>
+                <div style="font-family:'Bricolage Grotesque', system-ui, sans-serif;font-weight:800;font-size:26px;line-height:1;letter-spacing:-0.035em;color:#0E1A33">
+                  chillcheck<span style="color:#2E48FE">.</span>
+                </div>
+                <div style="font-size:10px;color:#565E78;letter-spacing:0.18em;text-transform:uppercase;margin-top:6px;font-family:'JetBrains Mono',monospace">local installer console</div>
               </div>
-              <div style="font-size:10px;color:#565E78;letter-spacing:0.18em;text-transform:uppercase;margin-top:6px">local installer console</div>
             </div>
           </div>
           <nav class="cc-nav">
             ${tabs.map(t => `
               <button onclick="navigate('${t.id}')"
-                style="background:transparent;border:none;border-bottom:${state.view===t.id?'2px solid #0E1A33':'2px solid transparent'};
-                  padding:12px 16px;font-size:12px;font-weight:${state.view===t.id?600:500};letter-spacing:0.06em;
-                  text-transform:uppercase;white-space:nowrap;color:${state.view===t.id?'#0E1A33':'#565E78'};
+                style="background:transparent;border:none;border-bottom:${state.view===t.id?'3px solid #2E48FE':'3px solid transparent'};
+                  padding:12px 16px;font-size:13px;font-weight:${state.view===t.id?700:600};letter-spacing:-0.005em;
+                  white-space:nowrap;color:${state.view===t.id?'#0E1A33':'#565E78'};
                   cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:6px;flex-shrink:0">
                 ${t.label}
-                ${t.dot ? '<span style="width:6px;height:6px;border-radius:50%;background:#C97A1A;display:inline-block"></span>' : ''}
+                ${t.dot ? '<span style="width:6px;height:6px;border-radius:50%;background:#FFB429;display:inline-block"></span>' : ''}
               </button>
             `).join('')}
           </nav>
         </header>
+      `;
+    }
+
+    // V2 LogoMark — cobalt rounded square + snowflake glyph. Matches
+    // dashboard/lib/icons.tsx LogoMark for cross-surface consistency.
+    function logoMark(size) {
+      const sz = size || 36;
+      return `
+        <svg width="${sz}" height="${sz}" viewBox="0 0 40 40" style="display:block;flex-shrink:0">
+          <defs>
+            <linearGradient id="cclm-${sz}" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%"  stop-color="#2E48FE" />
+              <stop offset="100%" stop-color="#2E48FE" stop-opacity="0.78" />
+            </linearGradient>
+          </defs>
+          <rect x="1" y="1" width="38" height="38" rx="11" fill="url(#cclm-${sz})" />
+          <g stroke="#fff" stroke-width="2.4" stroke-linecap="round" fill="none">
+            <line x1="20" y1="8"  x2="20" y2="32" />
+            <line x1="9.6"  y1="14" x2="30.4" y2="26" />
+            <line x1="9.6"  y1="26" x2="30.4" y2="14" />
+            <line x1="20" y1="8"  x2="17.5" y2="11.5" />
+            <line x1="20" y1="8"  x2="22.5" y2="11.5" />
+            <line x1="20" y1="32" x2="17.5" y2="28.5" />
+            <line x1="20" y1="32" x2="22.5" y2="28.5" />
+          </g>
+          <circle cx="20" cy="20" r="2.4" fill="#fff" />
+        </svg>
       `;
     }
 
@@ -313,7 +343,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       if (state.cloudConnected) {
         return `
           <div style="max-width:480px">
-            <h1 style="font-family:'Instrument Serif',Georgia,serif;font-size:36px;font-weight:400;letter-spacing:-0.02em;margin:0 0 8px">Cloud Link</h1>
+            <h1 style="font-family:'Bricolage Grotesque', system-ui, sans-serif;font-size:36px;font-weight:700;letter-spacing:-0.02em;margin:0 0 8px">Cloud Link</h1>
             <p style="font-size:13px;color:#565E78;margin:0 0 24px">This hub is linked to ChillCheck Cloud.</p>
             <div style="background:#FFFFFF;border:1px solid #EEE7D3;padding:22px 24px;margin-bottom:16px">
               <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
@@ -344,7 +374,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       return `
         <div style="display:grid;grid-template-columns:1fr 360px;gap:36px;align-items:start" class="cc-two-col">
           <section>
-            <h1 style="font-family:'Instrument Serif',Georgia,serif;font-size:38px;font-weight:400;letter-spacing:-0.02em;margin:0 0 8px">This Pi isn't linked yet.</h1>
+            <h1 style="font-family:'Bricolage Grotesque', system-ui, sans-serif;font-size:38px;font-weight:700;letter-spacing:-0.02em;margin:0 0 8px">This Pi isn't linked yet.</h1>
             <p style="font-size:14px;color:#565E78;line-height:1.6;max-width:560px;margin:0 0 28px">
               Link this hub to your ChillCheck cloud account so its sensor readings show up in the dashboard and alerts get sent to your team.
             </p>
@@ -366,7 +396,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 style="width:100%;padding:10px 12px;font-size:24px;font-family:'JetBrains Mono',monospace;letter-spacing:0.2em;text-align:center;border:1px solid #2a2a25;background:#0a0a0a;color:#F7F2E7;outline:none;margin-bottom:8px">
               <div id="pairError" style="display:none;background:#2a0a0a;border:1px solid #C72717;padding:10px 14px;margin-bottom:12px;font-size:13px;color:#E5B0A8"></div>
               <button onclick="submitPairingCode()"
-                style="background:#C97A1A;border:none;color:#0E1A33;padding:12px 20px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;cursor:pointer;font-family:inherit;margin-top:6px">
+                style="background:#2E48FE;border:none;color:#fff;padding:12px 20px;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;cursor:pointer;font-family:inherit;margin-top:6px">
                 Link this Pi →
               </button>
             </div>
@@ -403,7 +433,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       return `
         <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:20px;gap:12px;flex-wrap:wrap">
           <div>
-            <h1 style="font-family:'Instrument Serif',Georgia,serif;font-size:36px;font-weight:400;letter-spacing:-0.02em;margin:0">Sensors</h1>
+            <h1 style="font-family:'Bricolage Grotesque', system-ui, sans-serif;font-size:36px;font-weight:700;letter-spacing:-0.02em;margin:0">Sensors</h1>
             <div style="font-size:11px;color:#565E78;letter-spacing:0.12em;text-transform:uppercase;margin-top:4px;font-family:'JetBrains Mono',monospace">
               ${state.sensors.length} paired · ${unassigned.length} awaiting assignment
             </div>
@@ -443,14 +473,14 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
     function unassignedCard(s) {
       return `
-        <div style="background:#FFFFFF;border:1px dashed #C97A1A;padding:16px 20px;display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:12px;flex-wrap:wrap">
+        <div style="background:#FFFFFF;border:1px dashed #FFB429;padding:16px 20px;display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:12px;flex-wrap:wrap">
           <div>
             <div style="font-size:14px;font-weight:600;margin-bottom:4px">${esc(s.name || 'New sensor')}</div>
             <div style="font-size:11px;font-family:'JetBrains Mono',monospace;color:#565E78;margin-bottom:6px">···${esc(s.zigbee_id?.slice(-4)||'????')} · ${esc(s.last_seen_ago||'unknown')}</div>
             <div style="display:flex;gap:12px;align-items:center">${signalBars(s.rssi)} ${batteryBadge(s.battery_pct)}</div>
           </div>
           <a href="https://app.chillcheck.online/dashboard/sensors" target="_blank" rel="noopener"
-            style="background:#C97A1A;color:#0E1A33;border:none;padding:9px 14px;cursor:pointer;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;font-family:inherit;text-decoration:none">
+            style="background:#2E48FE;color:#fff;border:none;padding:9px 14px;cursor:pointer;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;font-family:inherit;text-decoration:none">
             Assign in cloud →
           </a>
         </div>
@@ -497,7 +527,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             `).join('')}
             ${state.pairingStep===2
               ? `<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:#F7F2E7;margin-bottom:16px">
-                   <div style="width:12px;height:12px;border:2px solid #EEE7D3;border-top-color:#C97A1A;border-radius:50%;animation:spin 0.8s linear infinite"></div>
+                   <div style="width:12px;height:12px;border:2px solid #EEE7D3;border-top-color:#2E48FE;border-radius:50%;animation:spin 0.8s linear infinite"></div>
                    <span style="font-size:12px;color:#565E78">Scanning for Zigbee devices…</span>
                  </div>` : ''
             }
@@ -525,7 +555,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       return `
         <div style="display:grid;grid-template-columns:1fr 340px;gap:36px;align-items:start" class="cc-two-col">
           <section>
-            <h1 style="font-family:'Instrument Serif',Georgia,serif;font-size:36px;font-weight:400;letter-spacing:-0.02em;margin:0 0 4px">Network</h1>
+            <h1 style="font-family:'Bricolage Grotesque', system-ui, sans-serif;font-size:36px;font-weight:700;letter-spacing:-0.02em;margin:0 0 4px">Network</h1>
             <p style="font-size:13px;color:#565E78;margin:0 0 24px">Connection status and Wi-Fi configuration</p>
 
             ${status.wifi_connected || status.eth_connected ? `
@@ -559,8 +589,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                        <div style="font-size:11px;color:#565E78;font-family:'JetBrains Mono',monospace;text-transform:uppercase">${net.secured?'wpa2':'open'}</div>
                        <div>${signalBars(null, net.strength)}</div>
                        <div style="text-align:right;font-size:11px;font-weight:500;letter-spacing:0.06em;text-transform:uppercase;
-                         border-bottom:1px solid ${state.selectedNetwork===net.ssid?'#C97A1A':'#0E1A33'};
-                         color:${state.selectedNetwork===net.ssid?'#C97A1A':'#0E1A33'};
+                         border-bottom:1px solid ${state.selectedNetwork===net.ssid?'#2E48FE':'#0E1A33'};
+                         color:${state.selectedNetwork===net.ssid?'#2E48FE':'#0E1A33'};
                          justify-self:end;cursor:pointer">Connect</div>
                      </div>
                    `).join('')}
@@ -603,7 +633,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       return `
         <div style="display:grid;grid-template-columns:1fr 340px;gap:36px;align-items:start" class="cc-two-col">
           <section>
-            <h1 style="font-family:'Instrument Serif',Georgia,serif;font-size:36px;font-weight:400;letter-spacing:-0.02em;margin:0 0 4px">System</h1>
+            <h1 style="font-family:'Bricolage Grotesque', system-ui, sans-serif;font-size:36px;font-weight:700;letter-spacing:-0.02em;margin:0 0 4px">System</h1>
             <p style="font-size:13px;color:#565E78;margin:0 0 24px">Hub health and maintenance actions.</p>
 
             ${Object.keys(info).length > 0 ? `
@@ -694,11 +724,15 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
     function viewLogin() {
       return `
-        <div style="background:#FFFFFF;border:1px solid #EEE7D3;padding:36px 32px;width:380px;max-width:100%">
-          <div style="font-family:'Instrument Serif',Georgia,serif;font-size:36px;line-height:0.95;letter-spacing:-0.02em;margin-bottom:4px">
-            ChillCheck<span style="color:#C97A1A">.</span>
+        <div style="background:#FFFFFF;border:1px solid #EEE7D3;border-radius:18px;padding:36px 32px;width:380px;max-width:100%;box-shadow:0 18px 40px -22px rgba(14,26,51,0.25)">
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:24px">
+            ${logoMark(40)}
+            <div style="font-family:'Bricolage Grotesque', system-ui, sans-serif;font-weight:800;font-size:26px;line-height:1;letter-spacing:-0.035em">
+              chillcheck<span style="color:#2E48FE">.</span>
+            </div>
           </div>
-          <div style="font-size:10px;color:#9097A8;letter-spacing:0.18em;text-transform:uppercase;margin-bottom:24px;font-family:'JetBrains Mono',monospace">local installer console · sign in</div>
+          <div style="font-size:10px;color:#9097A8;letter-spacing:0.14em;text-transform:uppercase;margin-bottom:6px;font-family:'JetBrains Mono',monospace">Sign in</div>
+          <div style="font-family:'Bricolage Grotesque', system-ui, sans-serif;font-weight:700;font-size:24px;letter-spacing:-0.025em;margin-bottom:18px">Hub console</div>
 
           ${state.loginError ? `<div style="background:#FAE9E6;border:1px solid #C72717;color:#7A1D12;padding:10px 12px;font-size:12px;margin-bottom:14px">${esc(state.loginError)}</div>` : ''}
 
@@ -730,7 +764,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         : 'Update the password used to sign in to this hub.';
       return `
         <div style="background:#FFFFFF;border:1px solid #EEE7D3;padding:36px 32px;width:420px;max-width:100%">
-          <div style="font-family:'Instrument Serif',Georgia,serif;font-size:32px;line-height:0.95;letter-spacing:-0.02em;margin-bottom:6px">${esc(title)}</div>
+          <div style="font-family:'Bricolage Grotesque', system-ui, sans-serif;font-weight:700;font-size:32px;line-height:0.95;letter-spacing:-0.035em;margin-bottom:6px">${esc(title)}</div>
           <div style="font-size:12px;color:#565E78;margin-bottom:22px;line-height:1.55">${esc(subtitle)}</div>
 
           ${state.changePwError ? `<div style="background:#FAE9E6;border:1px solid #C72717;color:#7A1D12;padding:10px 12px;font-size:12px;margin-bottom:14px">${esc(state.changePwError)}</div>` : ''}
@@ -783,7 +817,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           : `<pre style="margin:0;padding:14px 16px;font-family:'JetBrains Mono',monospace;font-size:11.5px;line-height:1.5;color:#F7F2E7;white-space:pre-wrap;word-break:break-word">${esc(state.logsContent || '(no log output)')}</pre>`;
       return `
         <div>
-          <h1 style="font-family:'Instrument Serif',Georgia,serif;font-size:36px;font-weight:400;letter-spacing:-0.02em;margin:0 0 4px">Logs</h1>
+          <h1 style="font-family:'Bricolage Grotesque', system-ui, sans-serif;font-size:36px;font-weight:700;letter-spacing:-0.02em;margin:0 0 4px">Logs</h1>
           <p style="font-size:13px;color:#565E78;margin:0 0 20px">Recent journal output for each ChillCheck service. Last 500 lines, oldest first.</p>
 
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px">
@@ -826,7 +860,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
     function batteryBadge(pct) {
       if (pct === null || pct === undefined) return `<span style="font-size:11px;color:#9097A8;font-family:'JetBrains Mono',monospace">—</span>`;
-      const color = pct > 60 ? '#1E6F4F' : pct > 30 ? '#C97A1A' : '#C72717';
+      const color = pct > 60 ? '#1E6F4F' : pct > 30 ? '#FFB429' : '#C72717';
       return `<span style="font-size:11px;font-weight:600;color:${color};font-family:'JetBrains Mono',monospace">${pct}%</span>`;
     }
 
