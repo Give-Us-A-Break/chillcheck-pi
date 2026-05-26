@@ -100,6 +100,42 @@ if ! sudo test -f "$SUDOERS_JOURNAL"; then
   log "  Installed $SUDOERS_JOURNAL"
 fi
 
+# 4G failover dispatcher (Epic 10 slice 4). Installs/updates idempotently so
+# existing hubs pick it up automatically without a re-flash.
+DISPATCHER="/etc/NetworkManager/dispatcher.d/10-chillcheck-4g-failover"
+if ! sudo test -f "$DISPATCHER" 2>/dev/null; then
+  sudo tee "$DISPATCHER" > /dev/null <<'DISPEOF'
+#!/bin/bash
+# NetworkManager dispatcher — ChillCheck 4G failover
+# Sets route metric 700 on any USB-ethernet adapter so it acts as a
+# secondary route. Primary ethernet (eth0, metric ~100) is always preferred.
+IFACE="$1"
+ACTION="$2"
+
+[ "$ACTION" = "up" ] || exit 0
+
+case "$IFACE" in eth0|wlan0|wlan1|lo) exit 0 ;; esac
+
+NET_TYPE=$(cat "/sys/class/net/${IFACE}/type" 2>/dev/null)
+[ "$NET_TYPE" = "1" ] || exit 0
+
+DEVPATH=$(readlink -f "/sys/class/net/${IFACE}/device" 2>/dev/null || echo "")
+[[ "$DEVPATH" == */usb* ]] || exit 0
+
+ip route change default dev "$IFACE" metric 700 2>/dev/null \
+  || ip route add    default dev "$IFACE" metric 700 2>/dev/null \
+  || true
+
+if [ -n "${CONNECTION_ID:-}" ]; then
+  nmcli connection modify id "$CONNECTION_ID" ipv4.route-metric 700 2>/dev/null || true
+fi
+
+logger -t chillcheck "4G failover: ${IFACE} (${CONNECTION_ID:-unknown}) configured as secondary route (metric 700)"
+DISPEOF
+  sudo chmod 755 "$DISPATCHER"
+  log "  Installed 4G failover dispatcher"
+fi
+
 # ── Back up current installation ──────────────────────────────
 log "Backing up current installation to $BACKUP_DIR"
 sudo rm -rf "$BACKUP_DIR"

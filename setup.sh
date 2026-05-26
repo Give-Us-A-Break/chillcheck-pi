@@ -521,6 +521,70 @@ log "Granted $USER passwordless sudo for /usr/bin/journalctl"
 
 
 # ════════════════════════════════════════════════════════════
+# PHASE 11 — 4G FAILOVER (NetworkManager dispatcher)
+# Configures automatic failover to a 4G USB dongle when the
+# primary ethernet drops. Activates automatically when any
+# HiLink-mode dongle (e.g. Huawei E3372) is plugged in — no
+# manual steps required.
+# ════════════════════════════════════════════════════════════
+
+section "Phase 11 — 4G Failover (NetworkManager)"
+
+# NetworkManager is installed and active on Pi OS Bookworm by default.
+# Install it defensively in case this is an older or minimal image.
+if ! command -v nmcli &>/dev/null; then
+  log "Installing NetworkManager..."
+  sudo apt-get install -y -qq network-manager
+fi
+
+# Dispatcher script: whenever a USB-ethernet adapter comes up (Huawei E3372
+# in HiLink mode presents as a CDC Ethernet/RNDIS device on usb0, eth1, or
+# enxXXX), assign it route metric 700. The primary ethernet (eth0) defaults
+# to ~100, so the Pi stays on broadband while it's up and falls over to 4G
+# only when it drops. The metric is also persisted to the NM connection
+# profile so it survives reconnects.
+log "Installing 4G failover dispatcher..."
+sudo tee /etc/NetworkManager/dispatcher.d/10-chillcheck-4g-failover > /dev/null <<'DISPEOF'
+#!/bin/bash
+# NetworkManager dispatcher — ChillCheck 4G failover
+# Sets route metric 700 on any USB-ethernet adapter so it acts as a
+# secondary route. Primary ethernet (eth0, metric ~100) is always preferred.
+IFACE="$1"
+ACTION="$2"
+
+[ "$ACTION" = "up" ] || exit 0
+
+# Skip primary wired and wireless interfaces
+case "$IFACE" in eth0|wlan0|wlan1|lo) exit 0 ;; esac
+
+# Only act on Ethernet-type interfaces (ARPHRD_ETHER = 1); skips WiFi, PPP
+NET_TYPE=$(cat "/sys/class/net/${IFACE}/type" 2>/dev/null)
+[ "$NET_TYPE" = "1" ] || exit 0
+
+# Only act if the device is USB-backed (HiLink modem, RNDIS, CDC Ethernet).
+# The device path symlink passes through /sys/bus/usb/ for USB devices.
+DEVPATH=$(readlink -f "/sys/class/net/${IFACE}/device" 2>/dev/null || echo "")
+[[ "$DEVPATH" == */usb* ]] || exit 0
+
+# Apply high metric immediately so traffic continues via eth0 while it's up
+ip route change default dev "$IFACE" metric 700 2>/dev/null \
+  || ip route add    default dev "$IFACE" metric 700 2>/dev/null \
+  || true
+
+# Persist in the NM connection profile so the metric survives reconnects.
+# CONNECTION_ID is set by NetworkManager for each dispatcher invocation.
+if [ -n "${CONNECTION_ID:-}" ]; then
+  nmcli connection modify id "$CONNECTION_ID" ipv4.route-metric 700 2>/dev/null || true
+fi
+
+logger -t chillcheck "4G failover: ${IFACE} (${CONNECTION_ID:-unknown}) configured as secondary route (metric 700)"
+DISPEOF
+
+sudo chmod 755 /etc/NetworkManager/dispatcher.d/10-chillcheck-4g-failover
+log "4G failover dispatcher installed — plug in a HiLink USB dongle to activate automatically"
+
+
+# ════════════════════════════════════════════════════════════
 # DONE
 # ════════════════════════════════════════════════════════════
 
