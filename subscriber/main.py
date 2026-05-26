@@ -33,7 +33,7 @@ from dotenv import load_dotenv
 
 from alerting import AlertEngine
 from heartbeat import HeartbeatService
-from notifications import send_battery_digest
+from notifications import send_battery_digest, send_connectivity_restored
 from buffer import ReadingBuffer
 from outage import OutageTracker
 
@@ -544,6 +544,37 @@ def main():
                 f"(outage was {outage_duration_seconds}s)"
             )
 
+    # Running total of readings drained in the current reconnect window.
+    # Reset to 0 once the buffer is fully empty and the outage is cleared.
+    total_drained_this_outage = [0]
+
+    def emit_connectivity_restored(duration_seconds: int, buffered_count: int):
+        """Write device.connectivity_restored audit row and send reconnect email.
+        Both are best-effort — failures are logged but never raise.
+        """
+        try:
+            supabase.table("audit_log").insert({
+                "organisation_id": ORGANISATION_ID,
+                "profile_id":      None,
+                "action":          "device.connectivity_restored",
+                "metadata": {
+                    "device_id":               DEVICE_ID,
+                    "offline_duration_seconds": duration_seconds,
+                    "buffered_reading_count":   buffered_count,
+                },
+            }).execute()
+            log.info(
+                f"Emitted device.connectivity_restored audit "
+                f"(duration={duration_seconds}s, buffered={buffered_count})"
+            )
+        except Exception as e:
+            log.error(f"Failed to write connectivity_restored audit: {e}")
+        # Only notify for outages long enough to matter (5+ min = same floor
+        # as retrospective alert tiering). Shorter blips are implementation
+        # noise and don't warrant emailing contacts.
+        if duration_seconds >= RETRO_ALERT_MIN_SECONDS:
+            send_connectivity_restored(duration_seconds, buffered_count)
+
     def drain_reading_buffer():
         if reading_buffer.size() == 0:
             return
@@ -556,11 +587,15 @@ def main():
         if not drained_rows:
             # Drain hit a still-down endpoint — leave the outage window open.
             return
+        total_drained_this_outage[0] += len(drained_rows)
         if duration is not None and duration >= RETRO_ALERT_MIN_SECONDS:
             replay_threshold_checks(drained_rows, duration)
         if remaining == 0:
             # Buffer fully drained — outage is officially over.
-            outage_tracker.clear()
+            duration_final = outage_tracker.clear()
+            if duration_final is not None:
+                emit_connectivity_restored(duration_final, total_drained_this_outage[0])
+            total_drained_this_outage[0] = 0
 
     # ── Schedule periodic tasks ───────────────────────────────
     schedule.every(5).minutes.do(cache.refresh)

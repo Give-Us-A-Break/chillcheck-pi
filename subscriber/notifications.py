@@ -50,6 +50,38 @@ def notify(alert_id: str, notification_type: str) -> bool:
         return False
 
 
+def send_connectivity_restored(duration_seconds: int, buffered_count: int) -> bool:
+    """
+    Notify org contacts that the hub reconnected after an outage.
+    Pro/Enterprise only — the cloud endpoint gates by plan.
+    Fail-soft: a failure here never blocks the drain path.
+    """
+    if not NOTIFY_SECRET:
+        log.warning("NOTIFY_SECRET not set — connectivity notification skipped")
+        return False
+
+    try:
+        resp = httpx.post(
+            f"{VERCEL_URL}/api/digest/connectivity",
+            headers={"Authorization": f"Bearer {NOTIFY_SECRET}"},
+            json={
+                "device_id": DEVICE_ID,
+                "offline_duration_seconds": duration_seconds,
+                "buffered_reading_count": buffered_count,
+            },
+            timeout=20,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            log.info(f"Connectivity restored notification: {data.get('sent', 0)} email(s) sent")
+            return True
+        log.error(f"Connectivity endpoint returned {resp.status_code}: {resp.text[:200]}")
+        return False
+    except Exception as e:
+        log.error(f"Connectivity notification failed: {e}")
+        return False
+
+
 def send_battery_digest() -> bool:
     """
     Ask the ChillCheck cloud to send the weekly battery digest for this site.
