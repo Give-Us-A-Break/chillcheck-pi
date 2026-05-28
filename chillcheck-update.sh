@@ -169,6 +169,21 @@ if [ -f "$WORK_DIR/pi/chillcheck-update.sh" ]; then
   sudo install -m 755 "$WORK_DIR/pi/chillcheck-update.sh" /usr/local/bin/chillcheck-update
 fi
 
+# ── Catch up Python dependencies ──────────────────────────────
+# Older releases of this script didn't sync requirements.txt, so a release
+# that adds a new dep (sentry-sdk in 2026-05) would fail to import and
+# fall into the rollback path. Re-running pip install against the venv is
+# fast on a no-op (everything already satisfied) and resilient to network
+# blips — failure here is logged but doesn't abort the update, since the
+# health check downstream will catch any real breakage and roll back.
+REQS="$INSTALL_DIR/subscriber/requirements.txt"
+if [ -f "$REQS" ] && [ -x "$INSTALL_DIR/venv/bin/pip" ]; then
+  log "Syncing Python dependencies from $REQS"
+  if ! sudo -u "$SVC_USER" "$INSTALL_DIR/venv/bin/pip" install --quiet -r "$REQS"; then
+    log "WARNING: pip install reported errors — continuing; health check will catch broken imports"
+  fi
+fi
+
 # ── Start services + health check ─────────────────────────────
 log "Starting services"
 sudo systemctl start chillcheck-local-ui chillcheck-subscriber

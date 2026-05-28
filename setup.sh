@@ -274,7 +274,8 @@ pip install --quiet \
   flask-cors \
   requests \
   schedule \
-  pyserial
+  pyserial \
+  'sentry-sdk>=2.0,<3.0'
 
 deactivate
 log "Python dependencies installed in $INSTALL_DIR/venv"

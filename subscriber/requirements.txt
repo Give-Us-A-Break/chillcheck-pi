@@ -7,3 +7,4 @@ flask-cors==4.0.0
 requests==2.31.0
 schedule==1.2.1
 pyserial==3.5
+sentry-sdk>=2.0,<3.0

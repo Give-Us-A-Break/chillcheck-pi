@@ -52,6 +52,36 @@ LOG_LEVEL           = os.getenv("LOG_LEVEL", "INFO")
 BUFFER_DB_PATH      = os.getenv("BUFFER_DB_PATH", "/var/lib/chillcheck/buffer.db")
 OUTAGE_STATE_PATH   = os.getenv("OUTAGE_STATE_PATH", "/var/lib/chillcheck/outage.json")
 
+# ── Sentry ────────────────────────────────────────────────────
+# DSN defaults to the chillcheck-pi project so every Pi running this code
+# reports to Sentry automatically — customers don't configure observability.
+# Override via SENTRY_DSN in /etc/chillcheck/.env (set to "" to disable).
+# DSNs are not secrets: they're routing identifiers designed to be embedded
+# in client code (see Sentry docs / NEXT_PUBLIC_SENTRY_DSN). httpx auto-
+# integration propagates sentry-trace + baggage headers on the /api/notify
+# call, so one trace spans Pi → Vercel → Vonage.
+SENTRY_DSN_DEFAULT = "https://ec01713f389bc17f70360cab07883197@o4511468442091520.ingest.de.sentry.io/4511468471910480"
+SENTRY_DSN = os.getenv("SENTRY_DSN", SENTRY_DSN_DEFAULT)
+if SENTRY_DSN:
+    # ImportError is expected on the first update from a pre-sentry release:
+    # the old chillcheck-update.sh copies this new main.py but doesn't run
+    # `pip install -r requirements.txt`. The new updater (now in place) will
+    # install sentry-sdk on the next run. Until then, run without it.
+    try:
+        import sentry_sdk
+        sentry_sdk.init(
+            dsn=SENTRY_DSN,
+            environment=os.getenv("SENTRY_ENV", "production"),
+            traces_sample_rate=1.0,
+            # Sensor payloads include zigbee IDs; keep locals out of error reports.
+            include_local_variables=False,
+        )
+        sentry_sdk.set_tag("device_id", DEVICE_ID)
+        sentry_sdk.set_tag("organisation_id", ORGANISATION_ID)
+        sentry_sdk.set_tag("site_id", SITE_ID)
+    except ImportError:
+        print("sentry-sdk not installed; observability disabled. Re-run chillcheck-update.sh.", file=sys.stderr)
+
 # Retrospective alert tiering thresholds (Epic 10 slice 2)
 RETRO_ALERT_MIN_SECONDS = 5 * 60       # < 5min outage → noise, skip replay
 RETRO_ALERT_LONG_SECONDS = 60 * 60     # ≥ 60min → bump warning band to critical
