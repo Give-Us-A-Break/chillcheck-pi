@@ -501,49 +501,63 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     }
 
     function pairingModal() {
-      const steps = [
-        { title: 'Put sensor into pairing mode', desc: 'Hold the reset button on the SNZB-02LD for 5 seconds until the LED flashes rapidly.' },
-        { title: 'Waiting for sensor…',          desc: 'ChillCheck is scanning for a new Zigbee device. This usually takes 10–30 seconds.' },
-        { title: 'Sensor found!',                desc: 'New sensor detected. You can now assign it to a cabinet.' },
-      ];
+      // pairingStep: 0 = not open, 1 = scanning, 2 = found, 3 = timed out
+      if (state.pairingStep === 2) {
+        return `
+          <div style="position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:100;display:flex;align-items:center;justify-content:center">
+            <div style="background:#FFFFFF;border:1px solid #EEE7D3;padding:28px;width:440px;max-width:90vw">
+              <div style="font-size:16px;font-weight:700;margin-bottom:4px">Sensor Found!</div>
+              <div style="font-size:13px;color:#565E78;margin-bottom:20px">A new unassigned sensor has been detected.</div>
+              <div style="background:#EAF3EF;border:1px solid #1E6F4F;padding:12px 16px;margin-bottom:20px;font-size:13px;color:#1E6F4F;font-weight:500;display:flex;align-items:center;gap:8px">
+                <span style="width:8px;height:8px;border-radius:50%;background:#1E6F4F;flex-shrink:0;display:inline-block"></span>
+                New sensor detected and ready to assign in the cloud dashboard.
+              </div>
+              <div style="font-size:12px;color:#565E78;margin-bottom:20px;line-height:1.55">
+                The sensor appears as "Unassigned" on the <a href="https://app.chillcheck.online/dashboard/sensors" target="_blank" rel="noopener" style="color:#0E1A33;font-weight:600">cloud dashboard</a>.
+                Assign it to a cabinet there to start monitoring.
+              </div>
+              <div style="display:flex;gap:8px;justify-content:flex-end">
+                <button onclick="cancelPairing();refreshSensors();" style="background:#0E1A33;color:#F7F2E7;border:none;padding:9px 16px;cursor:pointer;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;font-family:inherit">Done</button>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+      if (state.pairingStep === 3) {
+        return `
+          <div style="position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:100;display:flex;align-items:center;justify-content:center">
+            <div style="background:#FFFFFF;border:1px solid #EEE7D3;padding:28px;width:440px;max-width:90vw">
+              <div style="font-size:16px;font-weight:700;margin-bottom:4px">Pairing Timed Out</div>
+              <div style="font-size:13px;color:#565E78;margin-bottom:20px">No new sensor was detected within 2 minutes.</div>
+              <div style="background:#FFF4E5;border:1px solid #FFB429;padding:12px 16px;margin-bottom:20px;font-size:13px;color:#7A5800;line-height:1.55">
+                Make sure the sensor is within range of the hub, then hold the reset button for 5 seconds until the LED blinks rapidly.
+              </div>
+              <div style="display:flex;gap:8px;justify-content:flex-end">
+                <button onclick="cancelPairing()" style="background:transparent;color:#0E1A33;border:1px solid #EEE7D3;padding:9px 14px;cursor:pointer;font-size:11px;letter-spacing:0.06em;text-transform:uppercase;font-family:inherit">Cancel</button>
+                <button onclick="startPairing()" style="background:#0E1A33;color:#F7F2E7;border:none;padding:9px 16px;cursor:pointer;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;font-family:inherit">Try again</button>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+      // pairingStep === 1: scanning
       return `
         <div style="position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:100;display:flex;align-items:center;justify-content:center">
           <div style="background:#FFFFFF;border:1px solid #EEE7D3;padding:28px;width:440px;max-width:90vw">
             <div style="font-size:16px;font-weight:700;margin-bottom:4px">Pair New Sensor</div>
-            <div style="font-size:13px;color:#565E78;margin-bottom:24px">Follow the steps below to add a new SNZB-02LD</div>
-            ${steps.map((step,i) => `
-              <div style="display:flex;gap:14px;margin-bottom:18px;opacity:${state.pairingStep>=i+1?1:0.35}">
-                <div style="width:26px;height:26px;flex-shrink:0;
-                  background:${state.pairingStep>i+1?'#1E6F4F':state.pairingStep===i+1?'#0E1A33':'#EEE7D3'};
-                  color:${state.pairingStep>=i+1?'#F7F2E7':'#9097A8'};
-                  display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;font-family:'JetBrains Mono',monospace">
-                  ${state.pairingStep>i+1?'✓':i+1}
-                </div>
-                <div>
-                  <div style="font-size:13px;font-weight:600;margin-bottom:2px">${step.title}</div>
-                  <div style="font-size:12px;color:#565E78;line-height:1.5">${step.desc}</div>
-                </div>
+            <div style="font-size:13px;color:#565E78;margin-bottom:20px">Pairing mode is active. Hold the reset button on the sensor for 5 seconds until the LED blinks rapidly.</div>
+            <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;background:#F7F2E7;border:1px solid #EEE7D3;margin-bottom:16px">
+              <div style="position:relative;width:20px;height:20px;flex-shrink:0">
+                <div style="position:absolute;inset:0;border-radius:50%;background:rgba(46,72,254,0.18);animation:ping 1.2s cubic-bezier(0,0,0.2,1) infinite"></div>
+                <div style="position:absolute;inset:4px;border-radius:50%;background:#2E48FE"></div>
               </div>
-            `).join('')}
-            ${state.pairingStep===2
-              ? `<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:#F7F2E7;margin-bottom:16px">
-                   <div style="width:12px;height:12px;border:2px solid #EEE7D3;border-top-color:#2E48FE;border-radius:50%;animation:spin 0.8s linear infinite"></div>
-                   <span style="font-size:12px;color:#565E78">Scanning for Zigbee devices…</span>
-                 </div>` : ''
-            }
-            ${state.pairingStep===3
-              ? `<div style="background:#EAF3EF;border:1px solid #1E6F4F;padding:10px 14px;margin-bottom:16px;font-size:13px;color:#1E6F4F;font-weight:500">New sensor detected and ready to assign</div>` : ''
-            }
-            <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
+              <span style="font-size:12px;color:#565E78;font-family:'JetBrains Mono',monospace">Scanning for Zigbee devices…</span>
+            </div>
+            <div style="font-size:11px;color:#9097A8;font-family:'JetBrains Mono',monospace;margin-bottom:20px">
+              pairing mode active · listening for up to 2 minutes
+            </div>
+            <div style="display:flex;gap:8px;justify-content:flex-end">
               <button onclick="cancelPairing()" style="background:transparent;color:#0E1A33;border:1px solid #EEE7D3;padding:9px 14px;cursor:pointer;font-size:11px;letter-spacing:0.06em;text-transform:uppercase;font-family:inherit">Cancel</button>
-              ${state.pairingStep<3
-                ? `<button onclick="advancePairing()" style="background:#0E1A33;color:#F7F2E7;border:none;padding:9px 16px;cursor:pointer;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;font-family:inherit">${state.pairingStep===0?'Start':state.pairingStep===1?'Next →':'...'}</button>`
-                : ''
-              }
-              ${state.pairingStep===3
-                ? `<button onclick="cancelPairing();refreshSensors();" style="background:#0E1A33;color:#F7F2E7;border:none;padding:9px 16px;cursor:pointer;font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;font-family:inherit">Done</button>`
-                : ''
-              }
             </div>
           </div>
         </div>
@@ -1047,30 +1061,30 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     }
 
     async function startPairing() {
+      // Snapshot current sensor IDs before pairing
+      const snapshot = new Set((state.sensors || []).map(s => s.id));
+      // Enable pairing mode immediately
       await api('POST', '/api/sensors/pair', { enable: true });
       state.pairingActive = true;
       state.pairingStep   = 1;
       render();
-    }
-
-    async function advancePairing() {
-      state.pairingStep++;
-      if (state.pairingStep === 2) {
-        // Poll for new sensor
-        let attempts = 0;
-        const poll = setInterval(async () => {
-          const data = await api('GET', '/api/sensors');
-          const newSensor = (data.sensors||[]).find(s => !s.cabinet_id && !state.sensors.find(x => x.id === s.id));
-          if (newSensor || attempts > 12) {
-            clearInterval(poll);
-            state.pairingStep = 3;
-            state.sensors = data.sensors || [];
-            render();
-          }
-          attempts++;
-        }, 5000);
-      }
-      render();
+      // Start polling immediately — no "Next" needed
+      let attempts = 0;
+      const poll = setInterval(async () => {
+        attempts++;
+        const data = await api('GET', '/api/sensors');
+        const newSensor = (data.sensors||[]).find(s => !s.cabinet_id && !snapshot.has(s.id));
+        if (newSensor) {
+          clearInterval(poll);
+          state.pairingStep = 2;
+          state.sensors = data.sensors || [];
+          render();
+        } else if (attempts >= 24) {
+          clearInterval(poll);
+          state.pairingStep = 3;
+          render();
+        }
+      }, 5000);
     }
 
     async function cancelPairing() {
