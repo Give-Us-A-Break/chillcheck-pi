@@ -444,7 +444,7 @@ class AlertEngine:
 
         now = datetime.now(timezone.utc)
 
-        # Battery and signal alerts are informational — email only, no SMS/call escalation
+        # Battery, signal, and predictive_drift are email-only — no SMS/call escalation
         escalatable = {"high_temp", "low_temp", "sensor_offline", "device_offline"}
 
         for alert in active_alerts:

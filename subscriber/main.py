@@ -32,6 +32,7 @@ from supabase import create_client, Client
 from dotenv import load_dotenv
 
 from alerting import AlertEngine
+from drift import DriftDetector
 from heartbeat import HeartbeatService
 from notifications import send_battery_digest, send_connectivity_restored
 from buffer import ReadingBuffer
@@ -185,12 +186,14 @@ class ReadingProcessor:
         alert_engine,
         buffer: ReadingBuffer,
         outage_tracker: OutageTracker,
+        drift_detector: Optional[DriftDetector] = None,
     ):
-        self.supabase       = supabase
-        self.cache          = cache
-        self.alert_engine   = alert_engine
-        self.buffer         = buffer
-        self.outage_tracker = outage_tracker
+        self.supabase        = supabase
+        self.cache           = cache
+        self.alert_engine    = alert_engine
+        self.buffer          = buffer
+        self.outage_tracker  = outage_tracker
+        self.drift_detector  = drift_detector
 
     def process(self, zigbee_id: str, payload: dict):
         """Process a reading from a Zigbee2MQTT message."""
@@ -274,7 +277,7 @@ class ReadingProcessor:
         if not reading_synced:
             return
 
-        # ── 5. Threshold check ────────────────────────────────
+        # ── 5. Threshold check + drift detection ──────────────
         cabinet = self.cache.get_cabinet(cabinet_id)
         if cabinet:
             self.alert_engine.check_temperature(
@@ -282,6 +285,10 @@ class ReadingProcessor:
                 sensor=sensor,
                 temperature=temperature,
             )
+
+            if self.drift_detector:
+                self.drift_detector.add_reading(cabinet_id, temperature, now)
+                self.drift_detector.check_drift(cabinet, sensor)
 
             # Keep cached sensor in sync with the row we just wrote so
             # state like low_signal_since reflects the latest DB value.
@@ -532,12 +539,13 @@ def main():
         log.error(f"Failed to mark device online: {e}")
 
     # ── Build services ────────────────────────────────────────
-    cache          = SensorCache(supabase)
-    alert_engine   = AlertEngine(supabase, ORGANISATION_ID, SITE_ID, DEVICE_ID)
-    reading_buffer = ReadingBuffer(db_path=BUFFER_DB_PATH)
-    outage_tracker = OutageTracker(state_path=OUTAGE_STATE_PATH)
-    processor      = ReadingProcessor(supabase, cache, alert_engine, reading_buffer, outage_tracker)
-    offline_check  = OfflineChecker(supabase, cache, alert_engine)
+    cache            = SensorCache(supabase)
+    alert_engine     = AlertEngine(supabase, ORGANISATION_ID, SITE_ID, DEVICE_ID)
+    reading_buffer   = ReadingBuffer(db_path=BUFFER_DB_PATH)
+    outage_tracker   = OutageTracker(state_path=OUTAGE_STATE_PATH)
+    drift_detector   = DriftDetector(supabase, ORGANISATION_ID, SITE_ID, DEVICE_ID)
+    processor        = ReadingProcessor(supabase, cache, alert_engine, reading_buffer, outage_tracker, drift_detector)
+    offline_check    = OfflineChecker(supabase, cache, alert_engine)
     heartbeat      = HeartbeatService(supabase, DEVICE_ID)
 
     initial_buffer_size = reading_buffer.size()
