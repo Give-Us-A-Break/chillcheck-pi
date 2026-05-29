@@ -205,7 +205,7 @@ class ReadingProcessor:
             if not sensor:
                 return
 
-        # ── 2. Extract temperature ────────────────────────────
+        # ── 2. Extract temperature and humidity ───────────────
         temperature = payload.get("temperature")
         if temperature is None:
             log.debug(f"No temperature in payload for {zigbee_id}")
@@ -216,6 +216,14 @@ class ReadingProcessor:
         except (ValueError, TypeError):
             log.warning(f"Invalid temperature value: {temperature}")
             return
+
+        humidity_raw = payload.get("humidity")
+        humidity: Optional[float] = None
+        if humidity_raw is not None:
+            try:
+                humidity = round(float(humidity_raw), 2)
+            except (ValueError, TypeError):
+                log.debug(f"Invalid humidity value: {humidity_raw}")
 
         battery   = payload.get("battery")
         link_quality = payload.get("linkquality")   # 0-255, convert to approx dBm
@@ -276,6 +284,22 @@ class ReadingProcessor:
         # checks against buffered readings come in slice 2.
         if not reading_synced:
             return
+
+        # ── 4b. Write humidity reading to Supabase ────────────
+        if humidity is not None:
+            try:
+                self.supabase.table("humidity_readings").insert({
+                    "id":              str(uuid.uuid4()),
+                    "organisation_id": ORGANISATION_ID,
+                    "site_id":         SITE_ID,
+                    "cabinet_id":      cabinet_id,
+                    "sensor_id":       sensor_id,
+                    "humidity":        humidity,
+                    "recorded_at":     now,
+                    "synced_at":       datetime.utcnow().isoformat() + "Z",
+                }).execute()
+            except Exception as e:
+                log.warning(f"Humidity reading insert failed for cabinet {cabinet_id}: {e}")
 
         # ── 5. Threshold check + drift detection ──────────────
         cabinet = self.cache.get_cabinet(cabinet_id)
