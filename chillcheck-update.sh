@@ -40,7 +40,8 @@ SVC_USER="chillcheck"
 WORK_DIR="$(mktemp -d /tmp/chillcheck-update.XXXXXX)"
 trap 'rm -rf "$WORK_DIR"' EXIT
 
-mkdir -p "$(dirname "$LOG_FILE")"
+sudo mkdir -p "$(dirname "$LOG_FILE")"
+sudo chown "$SVC_USER:$SVC_USER" "$(dirname "$LOG_FILE")"
 exec > >(tee -a "$LOG_FILE") 2>&1
 
 log() { echo "[$(date +'%Y-%m-%d %H:%M:%S')] $*"; }
@@ -65,12 +66,9 @@ fi
 
 log "Latest version: $LATEST"
 
-if [ "$CURRENT" = "$LATEST" ] && [ "$CURRENT" != "(none)" ]; then
-  log "Already up to date."
-  exit 0
-fi
-
 # ── Provision system state ────────────────────────────────────
+# Runs on every invocation (including "already up to date") so existing hubs
+# always catch up on system-level resources without needing a code change.
 # Idempotent. Catches up any system-level resources newer releases
 # expect to find. setup.sh creates these on a fresh install; the updater
 # replays them here so an existing hub can pick up changes without a
@@ -146,6 +144,11 @@ logger -t chillcheck "4G failover: ${IFACE} (${CONNECTION_ID:-unknown}) configur
 DISPEOF
   sudo chmod 755 "$DISPATCHER"
   log "  Installed 4G failover dispatcher"
+fi
+
+if [ "$CURRENT" = "$LATEST" ] && [ "$CURRENT" != "(none)" ]; then
+  log "Already up to date."
+  exit 0
 fi
 
 # ── Back up current installation ──────────────────────────────
