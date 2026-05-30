@@ -146,8 +146,35 @@ DISPEOF
   log "  Installed 4G failover dispatcher"
 fi
 
+# ── Catch up Python dependencies (always) ─────────────────────
+# Runs even on "already up to date" so a venv that's missing a dep declared
+# in requirements.txt (e.g. because a previous update wrote the version file
+# but the pip step was skipped or failed silently) self-heals on the next
+# run. On a true no-op pip is fast — it just confirms each spec is satisfied
+# and returns. Failure here is logged but doesn't abort: the health check on
+# a real update path catches broken imports, and on the up-to-date path the
+# subscriber is already running fine on whatever's installed.
+REQS_EARLY="$INSTALL_DIR/subscriber/requirements.txt"
+DEPS_CHANGED=0
+if [ -f "$REQS_EARLY" ] && [ -x "$INSTALL_DIR/venv/bin/pip" ]; then
+  log "Syncing Python dependencies from $REQS_EARLY"
+  PIP_LOG="$WORK_DIR/pip-early.log"
+  if ! sudo -u "$SVC_USER" "$INSTALL_DIR/venv/bin/pip" install -r "$REQS_EARLY" > "$PIP_LOG" 2>&1; then
+    log "WARNING: pip install reported errors — continuing"
+    sed 's/^/  pip: /' "$PIP_LOG"
+  fi
+  if grep -q "^Successfully installed" "$PIP_LOG" 2>/dev/null; then
+    DEPS_CHANGED=1
+    log "  pip installed new packages"
+  fi
+fi
+
 if [ "$CURRENT" = "$LATEST" ] && [ "$CURRENT" != "(none)" ]; then
   log "Already up to date."
+  if [ "$DEPS_CHANGED" = "1" ]; then
+    log "Restarting subscriber to pick up new deps"
+    sudo systemctl restart chillcheck-subscriber || true
+  fi
   exit 0
 fi
 
