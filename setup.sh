@@ -520,6 +520,19 @@ echo "$USER ALL=(root) NOPASSWD: /usr/bin/journalctl" | sudo tee /etc/sudoers.d/
 sudo chmod 0440 /etc/sudoers.d/chillcheck-journalctl
 log "Granted $USER passwordless sudo for /usr/bin/journalctl"
 
+# Sudoers rule for service restarts and Pi reboot from the local UI.
+# The /api/system/restart route invokes these; without this rule the
+# chillcheck service user gets a sudo password prompt and the call fails.
+cat <<SUDOERS | sudo tee /etc/sudoers.d/chillcheck-restart > /dev/null
+$USER ALL=(root) NOPASSWD: /usr/bin/systemctl restart mosquitto
+$USER ALL=(root) NOPASSWD: /usr/bin/systemctl restart zigbee2mqtt
+$USER ALL=(root) NOPASSWD: /usr/bin/systemctl restart chillcheck-subscriber
+$USER ALL=(root) NOPASSWD: /usr/bin/systemctl restart chillcheck-local-ui
+$USER ALL=(root) NOPASSWD: /usr/sbin/shutdown -r now
+SUDOERS
+sudo chmod 0440 /etc/sudoers.d/chillcheck-restart
+log "Granted $USER passwordless sudo for service restarts and Pi reboot"
+
 
 # ════════════════════════════════════════════════════════════
 # PHASE 11 — 4G FAILOVER (NetworkManager dispatcher)

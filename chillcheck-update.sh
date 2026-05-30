@@ -100,6 +100,18 @@ if ! sudo test -f "$SUDOERS_JOURNAL"; then
   log "  Installed $SUDOERS_JOURNAL"
 fi
 
+# Sudoers entry for service restarts + Pi reboot (local UI /api/system/restart).
+# Written unconditionally so that existing hubs pick up the corrected rules.
+SUDOERS_RESTART="/etc/sudoers.d/chillcheck-restart"
+printf '%s\n' \
+  "$SVC_USER ALL=(root) NOPASSWD: /usr/bin/systemctl restart mosquitto" \
+  "$SVC_USER ALL=(root) NOPASSWD: /usr/bin/systemctl restart zigbee2mqtt" \
+  "$SVC_USER ALL=(root) NOPASSWD: /usr/bin/systemctl restart chillcheck-subscriber" \
+  "$SVC_USER ALL=(root) NOPASSWD: /usr/bin/systemctl restart chillcheck-local-ui" \
+  "$SVC_USER ALL=(root) NOPASSWD: /usr/sbin/shutdown -r now" | \
+  sudo install -m 0440 /dev/stdin "$SUDOERS_RESTART"
+log "  Updated $SUDOERS_RESTART"
+
 # 4G failover dispatcher (Epic 10 slice 4). Installs/updates idempotently so
 # existing hubs pick it up automatically without a re-flash.
 DISPATCHER="/etc/NetworkManager/dispatcher.d/10-chillcheck-4g-failover"
