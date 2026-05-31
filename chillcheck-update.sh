@@ -46,6 +46,63 @@ exec > >(tee -a "$LOG_FILE") 2>&1
 
 log() { echo "[$(date +'%Y-%m-%d %H:%M:%S')] $*"; }
 
+# ── Report installed software versions to Supabase ────────────
+# Runs in a subshell so sourcing .env doesn't affect the outer set -u scope.
+# Failures are always non-fatal.
+report_software_versions() {
+  (
+    ENV_FILE="/etc/chillcheck/.env"
+    [ -f "$ENV_FILE" ] || { echo "[report_versions] $ENV_FILE not found, skipping"; exit 0; }
+    # shellcheck source=/dev/null
+    . "$ENV_FILE"
+    [ -n "${SUPABASE_URL:-}" ] && [ -n "${SUPABASE_SERVICE_KEY:-}" ] && [ -n "${DEVICE_ID:-}" ] || {
+      echo "[report_versions] Missing env vars, skipping"
+      exit 0
+    }
+
+    VER_Z2M=$(cat /opt/zigbee2mqtt/package.json 2>/dev/null \
+      | python3 -c "import sys,json; print(json.load(sys.stdin).get('version','unknown'))" 2>/dev/null \
+      || echo "unknown")
+    VER_MOSQUITTO=$(mosquitto -v 2>&1 | grep -oP '\d+\.\d+\.\d+' | head -1 2>/dev/null || echo "unknown")
+    VER_OS=$(. /etc/os-release 2>/dev/null && echo "${PRETTY_NAME:-unknown}" || echo "unknown")
+    VER_PYTHON=$(python3 --version 2>/dev/null | awk '{print $2}' || echo "unknown")
+    VER_NODE=$(node --version 2>/dev/null | sed 's/^v//' || echo "unknown")
+    VER_SUBSCRIBER="${LATEST:-${CURRENT:-unknown}}"
+    PIP="$INSTALL_DIR/venv/bin/pip"
+    VER_SENTRY=$(sudo -u "$SVC_USER" "$PIP" show sentry-sdk 2>/dev/null | awk '/^Version/{print $2}')
+    VER_SUPABASE=$(sudo -u "$SVC_USER" "$PIP" show supabase 2>/dev/null | awk '/^Version/{print $2}')
+    VER_PAHO=$(sudo -u "$SVC_USER" "$PIP" show paho-mqtt 2>/dev/null | awk '/^Version/{print $2}')
+
+    JSON=$(python3 - <<PYEOF
+import json, sys
+print(json.dumps({
+  "subscriber":    "${VER_SUBSCRIBER}",
+  "zigbee2mqtt":   "${VER_Z2M}",
+  "mosquitto":     "${VER_MOSQUITTO}",
+  "os":            "${VER_OS}",
+  "python":        "${VER_PYTHON}",
+  "node":          "${VER_NODE}",
+  "pip": {
+    "sentry_sdk":  "${VER_SENTRY:-unknown}",
+    "supabase":    "${VER_SUPABASE:-unknown}",
+    "paho_mqtt":   "${VER_PAHO:-unknown}"
+  },
+  "updated_at":    "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+}))
+PYEOF
+)
+
+    curl -sf -X PATCH \
+      "${SUPABASE_URL}/rest/v1/devices?id=eq.${DEVICE_ID}" \
+      -H "apikey: ${SUPABASE_SERVICE_KEY}" \
+      -H "Authorization: Bearer ${SUPABASE_SERVICE_KEY}" \
+      -H "Content-Type: application/json" \
+      -d "{\"software_versions\": ${JSON}}" \
+      && log "Software versions reported to Supabase" \
+      || log "WARNING: failed to report software versions (non-fatal)"
+  )
+}
+
 CURRENT="(none)"
 if [ -f "$VERSION_FILE" ]; then
   CURRENT=$(cat "$VERSION_FILE")
@@ -175,6 +232,7 @@ if [ "$CURRENT" = "$LATEST" ] && [ "$CURRENT" != "(none)" ]; then
     log "Restarting subscriber to pick up new deps"
     sudo systemctl restart chillcheck-subscriber || true
   fi
+  report_software_versions
   exit 0
 fi
 
@@ -242,6 +300,7 @@ for i in {1..15}; do
     sudo mkdir -p "$(dirname "$VERSION_FILE")"
     echo "$LATEST" | sudo tee "$VERSION_FILE" > /dev/null
     log "Update applied successfully: $CURRENT -> $LATEST"
+    report_software_versions
     exit 0
   fi
 done
